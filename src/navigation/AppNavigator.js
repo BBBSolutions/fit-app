@@ -13,9 +13,11 @@ import TrainerLoginScreen from '../screens/Trainer/TrainerLoginScreen';
 import TrainerOnboardingSurveyScreen from '../screens/Trainer/TrainerOnboardingSurveyScreen';
 import TrainerDashboardScreen from '../screens/Trainer/TrainerDashboardScreen';
 import TrainerClientListScreen from '../screens/Trainer/TrainerClientListScreen';
+import TrainerClientDetailsScreen from '../screens/Trainer/TrainerClientDetailsScreen';
 import TrainerChatScreen from '../screens/Trainer/TrainerChatScreen';
 import TrainerDetails from '../screens/Trainer/TrainerDetails';
 import EditWorkoutPlanScreen from '../screens/Shared/EditWorkoutPlanScreen';
+import MessagesScreen from '../screens/Member/MessagesScreen';
 import AdminBrandingScreen from '../screens/Admin/AdminBrandingScreen';
 import AdminUserOnboardingScreen from '../screens/Admin/AdminUserOnboardingScreen';
 import AdminBillingScreen from '../screens/Admin/AdminBillingScreen';
@@ -50,8 +52,10 @@ const AppNavigator = () => {
                 <Stack.Screen name="TrainerOnboarding" component={TrainerOnboardingSurveyScreen} />
                 <Stack.Screen name="TrainerDashboard" component={TrainerDashboardScreen} />
                 <Stack.Screen name="TrainerClientList" component={TrainerClientListScreen} />
+                <Stack.Screen name="TrainerClientDetails" component={TrainerClientDetailsScreen} />
                 <Stack.Screen name="TrainerChat" component={TrainerChatScreen} />
                 <Stack.Screen name="TrainerDetails" component={TrainerDetails} />
+                <Stack.Screen name="Messages" component={MessagesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
                 <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
                 <Stack.Screen name="AdminBranding" component={AdminBrandingScreen} />

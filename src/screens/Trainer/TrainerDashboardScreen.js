@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -9,9 +9,27 @@ import {
     Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
 
 const TrainerDashboardScreen = ({ navigation }) => {
     const [showFABMenu, setShowFABMenu] = useState(false);
+    const [trainerName, setTrainerName] = useState('Coach');
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const profile = await api.getProfile();
+                if (profile) {
+                    // Prefer fullName, fallback to name, fallback to 'Coach'
+                    const nameToDisplay = profile.fullName || profile.name || 'Coach';
+                    setTrainerName(nameToDisplay);
+                }
+            } catch (error) {
+                console.error("Failed to load trainer profile:", error);
+            }
+        };
+        fetchProfile();
+    }, []);
 
     const pendingReviews = [
         { id: 1, clientName: 'Sarah Johnson', goal: 'Lose Fat', week: 'Week 1', day: 'Day 3' },
@@ -41,7 +59,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.headerTitle}>Trainer Dashboard</Text>
-                        <Text style={styles.headerSubtitle}>Welcome back, Coach!</Text>
+                        <Text style={styles.headerSubtitle}>Welcome back, {trainerName}!</Text>
                     </View>
                     <TouchableOpacity style={styles.avatarButton}>
                         <Ionicons name="person-circle" size={40} color="#3182CE" />

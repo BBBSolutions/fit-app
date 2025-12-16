@@ -1,0 +1,132 @@
+openapi: 3.0.0
+info:
+  title: Fit-App Backend API
+  description: API for Fit-App using Supabase Edge Functions with Firebase Auth. This API expects `Authorization: Bearer <Firebase_ID_Token>` header.
+  version: 1.0.0
+servers:
+  - url: https://<project-ref>.supabase.co/functions/v1
+    description: Production Supabase Edge Functions
+
+components:
+  securitySchemes:
+    bearerAuth:
+        type: http
+        scheme: bearer
+        bearerFormat: JWT
+
+  schemas:
+    Profile:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        gender:
+          type: string
+        preferences:
+          type: object
+
+    Workout:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        exercises:
+          type: array
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              sets: {type: integer}
+              reps: {type: integer}
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth-verify:
+    post:
+      summary: Verify Firebase Token and Get User ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: {type: string}
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: {type: string}
+                  status: {type: string}
+
+  /profiles/get:
+    get:
+      summary: Get Current User Profile
+      responses:
+        '200':
+          description: Profile Data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+
+  /profiles/update:
+    post:
+      summary: Update User Profile
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/Profile'
+      responses:
+        '200':
+          description: Updated Profile
+
+  /workouts/list:
+    get:
+      summary: List User Workouts
+      responses:
+        '200':
+          description: List of workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                    $ref: '#/components/schemas/Workout'
+
+  /workouts/create:
+    post:
+      summary: Create New Workout
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/Workout'
+      responses:
+        '200':
+          description: Created Workout
+
+  /sessions/start:
+    post:
+      summary: Start a Workout Session
+      responses:
+        '200':
+            description: Session Started
+
+  /media/presign:
+    post:
+      summary: Get Upload URL
+      responses:
+        '200':
+            description: Upload URL returned

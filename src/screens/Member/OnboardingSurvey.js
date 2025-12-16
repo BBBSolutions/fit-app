@@ -9,10 +9,12 @@ import {
     Alert,
     SafeAreaView,
 } from 'react-native';
+import { api } from '../../services/api';
 
 const OnboardingSurvey = ({ navigation }) => {
     const [formData, setFormData] = useState({
         name: '',
+        email: '',
         age: '',
         gender: '',
         height: '',
@@ -45,9 +47,17 @@ const OnboardingSurvey = ({ navigation }) => {
             Alert.alert('Missing Information', 'Please fill in the required fields.');
             return;
         }
-        console.log('Survey Data:', formData);
-        // Navigate to MainApp (bottom tabs)
-        navigation.navigate('MainApp');
+
+        // Backend Integration
+        api.updateProfile(formData)
+            .then(() => {
+                Alert.alert("Success", "Profile setup complete!");
+                navigation.navigate('MainApp');
+            })
+            .catch(err => {
+                console.error("Profile Save Error:", err);
+                Alert.alert("Error", "Could not save profile. Please try again.");
+            });
     };
 
     const SelectionGroup = ({ options, selectedValue, onSelect }) => (
@@ -92,6 +102,16 @@ const OnboardingSurvey = ({ navigation }) => {
                         placeholder="e.g. Alex Johnson"
                         value={formData.name}
                         onChangeText={(text) => updateField('name', text)}
+                    />
+
+                    <Text style={styles.label}>Email (Recommended)</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="e.g. alex@example.com"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={formData.email}
+                        onChangeText={(text) => updateField('email', text)}
                     />
 
                     <Text style={styles.label}>Age</Text>

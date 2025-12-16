@@ -8,20 +8,41 @@ import {
     SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
+import { useFocusEffect, CommonActions } from '@react-navigation/native';
 
-const ProfileScreen = () => {
+const ProfileScreen = ({ navigation }) => {
     // Sample user data
-    const userData = {
-        name: 'Alex Johnson',
-        gymName: 'FitLife Gym',
-        age: 28,
-        gender: 'Male',
-        height: '175 cm',
-        weight: '75.5 kg',
-        fitnessLevel: 'Intermediate',
-        primaryGoal: 'Build Muscle',
-        planType: 'AI Premium',
-    };
+    // Initial state with empty values
+    const [userData, setUserData] = React.useState({
+        name: '',
+        gymName: '',
+        age: '',
+        gender: '',
+        height: '',
+        weight: '',
+        fitnessLevel: '',
+        primaryGoal: '',
+        planType: 'Free',
+    });
+
+    // Backend Integration
+    useFocusEffect(
+        React.useCallback(() => {
+            api.getProfile()
+                .then(data => {
+                    // Map API response to UI state
+                    if (data) {
+                        setUserData(prev => ({
+                            ...prev,
+                            ...data,
+                            // Handle potential mismatched field names or formats here if needed
+                        }));
+                    }
+                })
+                .catch(err => console.error("Failed to fetch profile:", err));
+        }, [])
+    );
 
     const handleEditProfile = () => {
         console.log('Edit Profile');
@@ -40,7 +61,19 @@ const ProfileScreen = () => {
     };
 
     const handleLogout = () => {
-        console.log('Logout');
+        const { getAuth, signOut } = require('firebase/auth');
+        const auth = getAuth();
+        signOut(auth).then(() => {
+            // Reset state
+            setUserData({});
+            // Perform navigation reset using CommonActions to ensure it bubbles up to the Root Stack
+            navigation.dispatch(
+                CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MemberLogin' }],
+                })
+            );
+        }).catch(e => console.error("Logout Error:", e));
     };
 
     const handleUpgradePlan = () => {

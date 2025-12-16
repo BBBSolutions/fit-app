@@ -95,13 +95,21 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
         setLoading(true);
         console.log('Saving profile:', formData);
 
-        // Simulate API call
-        setTimeout(() => {
-            setLoading(false);
+        // Include role: 'trainer' to ensure they are marked correctly in DB
+        const profileData = { ...formData, role: 'trainer' };
+
+        try {
+            const { api } = require('../../services/api');
+            await api.updateProfile(profileData);
             console.log('Profile saved successfully');
+            setLoading(false);
             // Navigate directly for web compatibility
             navigation.replace('TrainerDashboard');
-        }, 1500);
+        } catch (error) {
+            console.error('Failed to save trainer profile:', error);
+            setLoading(false);
+            Alert.alert('Error', 'Failed to save profile. Please try again.');
+        }
     };
 
     return (

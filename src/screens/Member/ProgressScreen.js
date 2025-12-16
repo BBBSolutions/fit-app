@@ -11,41 +11,56 @@ import {
     Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 const ProgressScreen = () => {
     // Sample data
-    const [currentWeight, setCurrentWeight] = useState(75.5);
-    const weightChange = -2.3;
-    const streakDays = 12;
-    const workoutsThisWeek = 4;
-    const caloriesBurned = 1850;
-    const totalMinutes = 180;
+    // Stats State (Dynamic)
+    const [currentWeight, setCurrentWeight] = useState(0);
+    const [weightChange, setWeightChange] = useState(0);
+    const [streakDays, setStreakDays] = useState(0);
+    const [workoutsThisWeek, setWorkoutsThisWeek] = useState(0);
+    const [caloriesBurned, setCaloriesBurned] = useState(0);
+    const [totalMinutes, setTotalMinutes] = useState(0);
 
-    // Member details from onboarding (including body measurements)
+    // Member details from onboarding
     const [memberDetails, setMemberDetails] = useState({
-        name: 'Alex Johnson',
-        age: '28',
-        gender: 'Male',
-        height: '175',
-        weight: '75.5',
-        waist: '32',
-        hip: '38',
-        chest: '40',
-        arms: '14',
-        thighs: '22',
-        fitnessLevel: 'Intermediate',
-        primaryGoal: 'Build Muscle',
-        experience: '1-2 years',
-        workoutDays: '4-5 days/week',
-        activityLevel: 'Moderately Active',
+        name: '',
+        age: '',
+        gender: '',
+        height: '',
+        weight: '',
+        waist: '-',
+        hip: '-',
+        chest: '-',
+        arms: '-',
+        thighs: '-',
+        fitnessLevel: '',
+
+        primaryGoal: '',
+        experienceDuration: '',
+        workoutDays: '',
+        activityLevel: '',
     });
+
+    useFocusEffect(
+        React.useCallback(() => {
+            api.getProfile().then(data => {
+                if (data) {
+                    setMemberDetails(prev => ({ ...prev, ...data }));
+                    if (data.weight) setCurrentWeight(parseFloat(data.weight));
+                }
+            }).catch(e => console.error("Progress Screen load error:", e));
+        }, [])
+    );
 
     const [showEditModal, setShowEditModal] = useState(false);
     const [editedDetails, setEditedDetails] = useState({ ...memberDetails });
     const [showDropdown, setShowDropdown] = useState({
         fitnessLevel: false,
         primaryGoal: false,
-        experience: false,
+        experienceDuration: false,
     });
 
     // Dropdown options (from onboarding)
@@ -53,24 +68,25 @@ const ProgressScreen = () => {
     const goalOptions = ['Lose Weight', 'Build Muscle', 'Get Toned', 'Improve Endurance', 'General Fitness'];
     const experienceOptions = ['Never', 'Less than 6 months', '6 months - 1 year', '1-2 years', '2+ years'];
 
-    const completedWorkouts = [
-        { id: 1, title: 'Full Body Strength', date: 'Nov 24, 2025', duration: '45 min' },
-        { id: 2, title: 'Upper Body Focus', date: 'Nov 22, 2025', duration: '40 min' },
-        { id: 3, title: 'Leg Day', date: 'Nov 20, 2025', duration: '50 min' },
-        { id: 4, title: 'Cardio & Core', date: 'Nov 18, 2025', duration: '35 min' },
-    ];
+    const [completedWorkouts, setCompletedWorkouts] = useState([]);
 
     const handleSaveDetails = () => {
-        setMemberDetails(editedDetails);
-        setCurrentWeight(parseFloat(editedDetails.weight));
-        setShowEditModal(false);
-        Alert.alert('Success', 'Your details have been updated!');
+        // optimistically update UI or show loading
+        api.updateProfile(editedDetails).then(() => {
+            setMemberDetails(editedDetails);
+            if (editedDetails.weight) setCurrentWeight(parseFloat(editedDetails.weight));
+            setShowEditModal(false);
+            Alert.alert('Success', 'Your details have been updated!');
+        }).catch(err => {
+            console.error("Failed to save details:", err);
+            Alert.alert("Error", "Could not save changes to backend.");
+        });
     };
 
     const handleCancelEdit = () => {
         setEditedDetails({ ...memberDetails });
         setShowEditModal(false);
-        setShowDropdown({ fitnessLevel: false, primaryGoal: false, experience: false });
+        setShowDropdown({ fitnessLevel: false, primaryGoal: false, experienceDuration: false });
     };
 
     const selectDropdownOption = (field, value) => {
@@ -140,7 +156,7 @@ const ProgressScreen = () => {
                         </View>
                         <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Experience</Text>
-                            <Text style={styles.detailValue}>{memberDetails.experience}</Text>
+                            <Text style={styles.detailValue}>{memberDetails.experienceDuration}</Text>
                         </View>
                     </View>
 
@@ -415,18 +431,18 @@ const ProgressScreen = () => {
                             <Text style={styles.inputLabel}>Experience</Text>
                             <TouchableOpacity
                                 style={styles.dropdown}
-                                onPress={() => setShowDropdown({ ...showDropdown, experience: !showDropdown.experience })}
+                                onPress={() => setShowDropdown({ ...showDropdown, experienceDuration: !showDropdown.experienceDuration })}
                             >
-                                <Text style={styles.dropdownText}>{editedDetails.experience}</Text>
+                                <Text style={styles.dropdownText}>{editedDetails.experienceDuration}</Text>
                                 <Ionicons name="chevron-down" size={20} color="#718096" />
                             </TouchableOpacity>
-                            {showDropdown.experience && (
+                            {showDropdown.experienceDuration && (
                                 <View style={styles.dropdownList}>
                                     {experienceOptions.map((option) => (
                                         <TouchableOpacity
                                             key={option}
                                             style={styles.dropdownItem}
-                                            onPress={() => selectDropdownOption('experience', option)}
+                                            onPress={() => selectDropdownOption('experienceDuration', option)}
                                         >
                                             <Text style={styles.dropdownItemText}>{option}</Text>
                                         </TouchableOpacity>

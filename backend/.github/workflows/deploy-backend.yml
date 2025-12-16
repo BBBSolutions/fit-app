@@ -1,0 +1,50 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase Project
+        run: supabase link --project-ref $PROJECT_ID --password $DB_PASSWORD
+
+      - name: Deploy Database Migrations
+        run: supabase db push
+
+      - name: Deploy Edge Functions
+        run: |
+          supabase functions deploy auth-verify --no-verify-jwt
+          supabase functions deploy profiles --no-verify-jwt
+          supabase functions deploy workouts --no-verify-jwt
+          supabase functions deploy sessions --no-verify-jwt
+          supabase functions deploy media --no-verify-jwt
+          supabase functions deploy payments --no-verify-jwt
+
+      - name: Set Function Secrets
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+        run: |
+          supabase secrets set FIREBASE_API_KEY=$FIREBASE_API_KEY

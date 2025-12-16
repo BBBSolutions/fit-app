@@ -1,42 +1,117 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Button, Alert } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
+import { getAuth, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { api } from '../../services/api';
+import { firebaseConfig } from '../../config/firebase';
 
 const MemberLoginScreen = ({ navigation }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState('');
-  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [verificationId, setVerificationId] = useState(null);
+  const [verificationCode, setVerificationCode] = useState('');
+  const recaptchaVerifier = useRef(null);
 
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     if (phoneNumber.trim() === '') {
       Alert.alert('Error', 'Please enter a phone number');
       return;
     }
-    // Simulate sending OTP
-    setShowOtpInput(true);
-    Alert.alert('Success', 'OTP sent!');
+
+    try {
+      const auth = getAuth();
+      const phoneProvider = new PhoneAuthProvider(auth);
+      const verificationId = await phoneProvider.verifyPhoneNumber(
+        phoneNumber,
+        recaptchaVerifier.current
+      );
+      setVerificationId(verificationId);
+      Alert.alert('Success', 'OTP sent!');
+    } catch (err) {
+      console.error("Phone Auth Error:", err);
+      Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+    }
   };
 
-  const handleEnter = () => {
-    if (otp.trim() === '') {
+  const handleVerifyOtp = async () => {
+    if (verificationCode.trim() === '') {
       Alert.alert('Error', 'Please enter the OTP');
       return;
     }
-    // Simulate OTP verification
-    navigation.navigate('OnboardingSurvey');
+
+    try {
+      const credential = PhoneAuthProvider.credential(
+        verificationId,
+        verificationCode
+      );
+      const auth = getAuth();
+      const userCredential = await signInWithCredential(auth, credential);
+      console.log("Phone Auth Success:", userCredential.user.uid);
+
+      // Proceed to backend verification
+      handleBackendVerify(userCredential.user);
+
+    } catch (err) {
+      console.error("Verification Error:", err);
+      Alert.alert('Error', `Invalid OTP: ${err.message}`);
+    }
+  };
+
+  const handleBackendVerify = (user) => {
+    if (user) {
+      user.getIdToken().then(token => {
+        api.authVerify(token).then(async () => {
+          try {
+            // Check Profile Completion
+            const profile = await api.getProfile();
+            console.log("Login Profile Check (Member):", profile);
+
+            if (profile && profile.name && profile.goal) {
+              navigation.replace('MainApp'); // Use replace
+            } else {
+              navigation.navigate('OnboardingSurvey');
+            }
+          } catch (e) {
+            console.log("Profile incomplete, to onboarding");
+            navigation.navigate('OnboardingSurvey');
+          }
+        }).catch(err => {
+          console.error("Backend Verification Failed:", err);
+          Alert.alert("Login Error", "Could not verify user with backend.");
+        });
+      });
+    }
+  };
+
+  // Dev Helper
+  const handleGuestLogin = () => {
+    const { signInAnonymously, getAuth, signOut } = require('firebase/auth');
+    const auth = getAuth();
+    signOut(auth).then(() => {
+      signInAnonymously(auth)
+        .then((cred) => handleBackendVerify(cred.user))
+        .catch(e => Alert.alert("Auth Failed", e.message));
+    });
   };
 
   return (
     <View style={styles.container}>
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaVerifier}
+        firebaseConfig={firebaseConfig}
+      // attemptInvisibleVerification={true} // Optional: try to verify without showing modal
+      />
+
       <Text style={styles.text}>Member Login</Text>
 
-      {!showOtpInput ? (
+      {!verificationId ? (
         <>
           <TextInput
             style={styles.input}
-            placeholder="Phone Number"
+            placeholder="+1 999 999 9999"
             value={phoneNumber}
             onChangeText={setPhoneNumber}
             keyboardType="phone-pad"
+            autoComplete="tel"
           />
           <Button title="Send OTP" onPress={handleSendOtp} />
         </>
@@ -44,14 +119,28 @@ const MemberLoginScreen = ({ navigation }) => {
         <>
           <TextInput
             style={styles.input}
-            placeholder="Enter OTP"
-            value={otp}
-            onChangeText={setOtp}
+            placeholder="Enter 6-digit OTP"
+            value={verificationCode}
+            onChangeText={setVerificationCode}
             keyboardType="number-pad"
           />
-          <Button title="Enter" onPress={handleEnter} />
+          <Button title="Verify OTP" onPress={handleVerifyOtp} />
+          <TouchableOpacity onPress={() => setVerificationId(null)} style={{ marginTop: 10 }}>
+            <Text style={{ color: 'blue' }}>Wrong number? Try again</Text>
+          </TouchableOpacity>
         </>
       )}
+
+      <View style={{ marginTop: 40, borderTopWidth: 1, borderColor: '#eee', paddingTop: 20, width: '100%' }}>
+        <Button
+          title="Dev: Login as New Guest"
+          color="#666"
+          onPress={handleGuestLogin}
+        />
+        <Text style={{ textAlign: 'center', marginTop: 5, fontSize: 10, color: '#888' }}>
+          (Testing Only: Creates Anonymous User)
+        </Text>
+      </View>
     </View>
   );
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -8,8 +8,23 @@ import {
     SafeAreaView,
     Image,
 } from 'react-native';
+import { api } from '../../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 const MemberHomeDashboardScreen = ({ navigation }) => {
+    const [userName, setUserName] = useState('');
+
+    useFocusEffect(
+        React.useCallback(() => {
+            api.getProfile().then(data => {
+                // Check for either camelCase (from our transformer) or snake_case 
+                // just to be safe, though our transformer ensures camelCase.
+                const name = data?.name || data?.first_name || 'Member';
+                setUserName(name);
+            }).catch(err => console.error("Home load error:", err));
+        }, [])
+    );
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -18,7 +33,7 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.greeting}>Good Morning,</Text>
-                        <Text style={styles.userName}>Alex Johnson</Text>
+                        <Text style={styles.userName}>{userName || 'Loading...'}</Text>
                     </View>
                     <View style={styles.logoPlaceholder}>
                         <Text style={styles.logoText}>GYM</Text>

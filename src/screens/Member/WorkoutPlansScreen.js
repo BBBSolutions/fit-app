@@ -8,62 +8,71 @@ import {
     SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 const WorkoutPlansScreen = ({ navigation }) => {
     const [selectedWeek, setSelectedWeek] = useState(1);
 
     // Sample workout plan data
-    const weeklyPlan = [
-        {
-            day: 'Monday',
-            title: 'Full Body Strength',
-            duration: '45 min',
-            exercises: ['Barbell Squats', 'Bench Press', 'Deadlifts'],
-        },
-        {
-            day: 'Tuesday',
-            title: 'Cardio & Core',
-            duration: '30 min',
-            exercises: ['Running', 'Planks', 'Bicycle Crunches'],
-        },
-        {
-            day: 'Wednesday',
-            title: 'Rest Day',
-            duration: 'Rest',
-            exercises: ['Active Recovery', 'Stretching'],
-        },
-        {
-            day: 'Thursday',
-            title: 'Upper Body Focus',
-            duration: '40 min',
-            exercises: ['Overhead Press', 'Pull-ups', 'Dumbbell Rows'],
-        },
-        {
-            day: 'Friday',
-            title: 'Leg Day',
-            duration: '50 min',
-            exercises: ['Leg Press', 'Lunges', 'Calf Raises'],
-        },
-        {
-            day: 'Saturday',
-            title: 'HIIT Training',
-            duration: '35 min',
-            exercises: ['Burpees', 'Jump Squats', 'Mountain Climbers'],
-        },
-        {
-            day: 'Sunday',
-            title: 'Rest & Recovery',
-            duration: 'Rest',
-            exercises: ['Yoga', 'Foam Rolling'],
-        },
-    ];
+    // Initial empty state
+    const [weeklyPlan, setWeeklyPlan] = useState([]);
+    const [currentTrainerId, setCurrentTrainerId] = useState(null);
 
-    const planSummary = {
-        totalWorkouts: 5,
-        totalCalories: 2450,
-        totalMinutes: 200,
-        trainerNotes: 'Great progress this week! Focus on maintaining proper form and gradually increasing weights.',
-    };
+    // Backend Integration
+    useFocusEffect(
+        React.useCallback(() => {
+            // Pass null to let backend infer ID from auth token
+            api.getAssignedWorkouts('')
+                .then(data => {
+                    if (data && data.length > 0) {
+                        // Map assignments to workout structure expected by UI
+                        // and add a synthetic 'day' if missing
+                        const formattedPlan = data.map((assignment, index) => {
+                            const w = assignment.workout || {};
+                            return {
+                                ...w,
+                                id: w.id, // Ensure ID is top level
+                                assignmentId: assignment.id,
+                                day: w.metadata?.day || `Workout ${index + 1}`,
+                                status: assignment.status,
+                                trainerId: assignment.trainer_id // Store trainer ID
+                            };
+                        });
+                        setWeeklyPlan(formattedPlan);
+
+                        // Find Trainer ID from first assignment
+                        if (formattedPlan.length > 0 && formattedPlan[0].trainerId && !currentTrainerId) {
+                            setCurrentTrainerId(formattedPlan[0].trainerId);
+                        }
+
+                        // Update summary based on real data
+                        setPlanSummary(prev => ({
+                            ...prev,
+                            totalWorkouts: formattedPlan.length,
+                            totalMinutes: formattedPlan.reduce((acc, curr) => acc + (parseInt(curr.duration) || 0), 0),
+                            trainerNotes: "Keep up the great work! Your new plan is ready."
+                        }));
+                    } else {
+                        setWeeklyPlan([]);
+                        setPlanSummary(prev => ({
+                            ...prev,
+                            totalWorkouts: 0,
+                            trainerNotes: "No workouts assigned yet. Ask your trainer for a plan!"
+                        }));
+                    }
+                })
+                .catch(err => console.error("Failed to fetch assigned workouts:", err));
+        }, [])
+    );
+
+    // Summary Data (Dynamic)
+    const [planSummary, setPlanSummary] = useState({
+        totalWorkouts: 0,
+        totalCalories: 0,
+        totalMinutes: 0,
+        trainerNotes: 'Complete workouts to see your weekly summary here.',
+    });
 
     const handleViewDetails = (day) => {
         // Navigate to WorkoutDetailScreen
@@ -81,7 +90,13 @@ const WorkoutPlansScreen = ({ navigation }) => {
 
     const handleMessageTrainer = () => {
         // Navigate to Messages tab
-        navigation.navigate('Messages');
+        if (currentTrainerId) {
+            navigation.navigate('Messages', { trainerId: currentTrainerId });
+        } else {
+            // Fallback or show alert
+            console.log("No trainer ID found from assignments");
+            navigation.navigate('Messages'); // Will show empty state
+        }
     };
 
     return (
@@ -135,10 +150,14 @@ const WorkoutPlansScreen = ({ navigation }) => {
                             </View>
 
                             <View style={styles.exercisePreview}>
-                                {workout.exercises.map((exercise, idx) => (
+                                {workout.exercises && workout.exercises.map((exercise, idx) => (
                                     <View key={idx} style={styles.exerciseItem}>
                                         <View style={styles.exerciseDot} />
-                                        <Text style={styles.exerciseText}>{exercise}</Text>
+                                        <Text style={styles.exerciseText}>
+                                            {typeof exercise === 'string'
+                                                ? exercise
+                                                : `${exercise.name}${exercise.sets ? ` (${exercise.sets} x ${exercise.reps})` : (exercise.duration ? ` (${exercise.duration})` : '')}`}
+                                        </Text>
                                     </View>
                                 ))}
                             </View>

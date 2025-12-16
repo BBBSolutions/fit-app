@@ -1,0 +1,155 @@
+{
+	"info": {
+		"_postman_id": "fit-app-backend-collection",
+		"name": "Fit-App Backend",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth Verify",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"token\": \"FIREBASE_ID_TOKEN\"\n}"
+				},
+				"url": {
+					"raw": "{{BASE_URL}}/auth-verify",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"auth-verify"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Profile",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{FIREBASE_TOKEN}}"
+					}
+				],
+				"url": {
+					"raw": "{{BASE_URL}}/profiles/get",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"profiles",
+						"get"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Profile",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{FIREBASE_TOKEN}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"New Name\",\n    \"age\": 30\n}"
+				},
+				"url": {
+					"raw": "{{BASE_URL}}/profiles/update",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"profiles",
+						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Workouts",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{FIREBASE_TOKEN}}"
+					}
+				],
+				"url": {
+					"raw": "{{BASE_URL}}/workouts/list",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"workouts",
+						"list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create Workout",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{FIREBASE_TOKEN}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"title\": \"Leg Day\",\n    \"exercises\": []\n}"
+				},
+				"url": {
+					"raw": "{{BASE_URL}}/workouts/create",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"workouts",
+						"create"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "https://<your-ref>.supabase.co/functions/v1",
+			"type": "string"
+		},
+		{
+			"key": "FIREBASE_TOKEN",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,6 +12,7 @@ import {
     ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
 
 const TrainerClientListScreen = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -20,54 +21,37 @@ const TrainerClientListScreen = ({ navigation }) => {
     const [sortBy, setSortBy] = useState('Name A-Z');
     const [showFabMenu, setShowFabMenu] = useState(false);
 
-    // Dummy Data
-    const [clients, setClients] = useState([
-        {
-            id: '1',
-            name: 'Sarah Johnson',
-            goal: 'Lose Fat',
-            lastActive: '2 days ago',
-            plan: 'Week 3 / Day 2',
-            status: 'Active',
-            image: 'https://randomuser.me/api/portraits/women/44.jpg',
-        },
-        {
-            id: '2',
-            name: 'Mike Chen',
-            goal: 'Build Muscle',
-            lastActive: '5 hours ago',
-            plan: 'Week 1 / Day 1',
-            status: 'Pending Review',
-            image: 'https://randomuser.me/api/portraits/men/32.jpg',
-        },
-        {
-            id: '3',
-            name: 'Emma Davis',
-            goal: 'Get Toned',
-            lastActive: '1 week ago',
-            plan: 'Week 4 / Day 5',
-            status: 'Needs Attention',
-            image: 'https://randomuser.me/api/portraits/women/68.jpg',
-        },
-        {
-            id: '4',
-            name: 'James Wilson',
-            goal: 'Strength',
-            lastActive: 'Yesterday',
-            plan: 'Week 2 / Day 3',
-            status: 'Active',
-            image: 'https://randomuser.me/api/portraits/men/85.jpg',
-        },
-        {
-            id: '5',
-            name: 'Linda Martinez',
-            goal: 'Mobility',
-            lastActive: '3 days ago',
-            plan: 'Week 1 / Day 2',
-            status: 'New Signup',
-            image: 'https://randomuser.me/api/portraits/women/22.jpg',
-        },
-    ]);
+    const [clients, setClients] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadClients();
+    }, []);
+
+    const loadClients = async () => {
+        try {
+            setLoading(true);
+            const data = await api.getClients();
+            // Data format from backend: { id, name, goal, status, image, lastActive, plan }
+            // Ensure status fallback
+            const formatted = data.map(c => ({
+                ...c,
+                status: c.status || 'Active',
+                lastActive: c.lastActive || 'N/A',
+                plan: c.plan || 'No Plan'
+            }));
+            setClients(formatted);
+        } catch (error) {
+            console.error("Failed to load clients:", error);
+            // Optional: fallback to empty or show error
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRefresh = () => {
+        loadClients();
+    };
 
     const filters = ['All', 'Active', 'Pending Review', 'New Signup', 'Needs Attention', 'High Priority'];
     const sortOptions = ['Name A-Z', 'Goal', 'Last Active', 'Progress %'];
@@ -89,7 +73,7 @@ const TrainerClientListScreen = ({ navigation }) => {
     });
 
     const renderClientItem = ({ item }) => (
-        <TouchableOpacity style={styles.clientCard} onPress={() => console.log('Navigate to client details')}>
+        <TouchableOpacity style={styles.clientCard} onPress={() => navigation.navigate('TrainerClientDetails', { client: item })}>
             <Image source={{ uri: item.image }} style={styles.clientImage} />
             <View style={styles.clientInfo}>
                 <View style={styles.clientHeader}>
@@ -212,6 +196,8 @@ const TrainerClientListScreen = ({ navigation }) => {
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={renderEmptyState}
                     showsVerticalScrollIndicator={false}
+                    refreshing={loading}
+                    onRefresh={handleRefresh}
                 />
 
                 {/* 6. Floating Action Button */}
