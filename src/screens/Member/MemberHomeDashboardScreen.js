@@ -13,17 +13,38 @@ import { useFocusEffect } from '@react-navigation/native';
 
 const MemberHomeDashboardScreen = ({ navigation }) => {
     const [userName, setUserName] = useState('');
+    const [todaysWorkout, setTodaysWorkout] = useState(null);
 
-    useFocusEffect(
+    useFocusEffect( // Keep this focus effect to refresh data when returning
         React.useCallback(() => {
             api.getProfile().then(data => {
-                // Check for either camelCase (from our transformer) or snake_case 
-                // just to be safe, though our transformer ensures camelCase.
                 const name = data?.name || data?.first_name || 'Member';
                 setUserName(name);
             }).catch(err => console.error("Home load error:", err));
+
+            api.getAssignedWorkouts('').then(data => {
+                if (data && data.length > 0) {
+                    // Simple logic: just pick the first one for now, or match date if available
+                    setTodaysWorkout(data[0].workout);
+                } else {
+                    setTodaysWorkout(null);
+                }
+            }).catch(err => console.error("Home workout load error:", err));
+
         }, [])
     );
+
+    const handleStartWorkout = () => {
+        if (todaysWorkout) {
+            // If trainer assigned workout exists, go to plans list to see details/start
+            // Or directly to detail? User asked: "shows trainer assigned plan and then start workout"
+            // Let's go to the Plan List (WorkoutPlansScreen) as the "Plan" page
+            navigation.navigate('Workouts');
+        } else {
+            // Else go to Create Custom Workout
+            navigation.navigate('MemberCreateWorkout');
+        }
+    };
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -43,47 +64,44 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                 {/* 2. Today's Workout Card */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Today's Workout</Text>
-                    <View style={styles.workoutCard}>
-                        <View style={styles.workoutHeader}>
-                            <Text style={styles.workoutTitle}>Full Body Strength – Day 1</Text>
-                            <Text style={styles.workoutDuration}>⏱ 45 min</Text>
+                    {todaysWorkout ? (
+                        <View style={styles.workoutCard}>
+                            <View style={styles.workoutHeader}>
+                                <Text style={styles.workoutTitle}>{todaysWorkout.title || "Workout"}</Text>
+                                <Text style={styles.workoutDuration}>⏱ {todaysWorkout.duration || "N/A"}</Text>
+                            </View>
+
+                            <View style={styles.exerciseList}>
+                                {(todaysWorkout.exercises || []).slice(0, 3).map((ex, idx) => (
+                                    <View key={idx} style={styles.exerciseItem}>
+                                        <View style={styles.exerciseIcon} />
+                                        <View>
+                                            <Text style={styles.exerciseName}>{typeof ex === 'string' ? ex : ex.name}</Text>
+                                            <Text style={styles.exerciseDetails}>{typeof ex === 'string' ? '' : `${ex.sets} Sets x ${ex.reps} Reps`}</Text>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.startButton}
+                                onPress={handleStartWorkout}
+                            >
+                                <Text style={styles.startButtonText}>Start Workout</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.viewPlanLink} onPress={() => navigation.navigate('Workouts')}>
+                                <Text style={styles.viewPlanText}>View Full Plan</Text>
+                            </TouchableOpacity>
                         </View>
-
-                        <View style={styles.exerciseList}>
-                            <View style={styles.exerciseItem}>
-                                <View style={styles.exerciseIcon} />
-                                <View>
-                                    <Text style={styles.exerciseName}>Barbell Squats</Text>
-                                    <Text style={styles.exerciseDetails}>3 Sets x 10 Reps</Text>
-                                </View>
-                            </View>
-                            <View style={styles.exerciseItem}>
-                                <View style={styles.exerciseIcon} />
-                                <View>
-                                    <Text style={styles.exerciseName}>Bench Press</Text>
-                                    <Text style={styles.exerciseDetails}>3 Sets x 12 Reps</Text>
-                                </View>
-                            </View>
-                            <View style={styles.exerciseItem}>
-                                <View style={styles.exerciseIcon} />
-                                <View>
-                                    <Text style={styles.exerciseName}>Bent Over Rows</Text>
-                                    <Text style={styles.exerciseDetails}>3 Sets x 12 Reps</Text>
-                                </View>
-                            </View>
+                    ) : (
+                        <View style={styles.workoutCard}>
+                            <Text style={{ color: '#718096', marginBottom: 10 }}>No workout assigned for today.</Text>
+                            <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout}>
+                                <Text style={styles.startButtonText}>Plan Your Workout</Text>
+                            </TouchableOpacity>
                         </View>
-
-                        <TouchableOpacity
-                            style={styles.startButton}
-                            onPress={() => navigation.navigate('WorkoutDetail')}
-                        >
-                            <Text style={styles.startButtonText}>Start Workout</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.viewPlanLink}>
-                            <Text style={styles.viewPlanText}>View Full Plan</Text>
-                        </TouchableOpacity>
-                    </View>
+                    )}
                 </View>
 
                 {/* 3. Progress Summary */}
@@ -135,10 +153,19 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.actionButton}
+                            onPress={() => navigation.navigate('MemberCreateWorkout')}
+                        >
+                            <Text style={styles.actionIcon}>💪</Text>
+                            <Text style={styles.actionText}>+ Workout</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <View style={[styles.quickActionsRow, { marginTop: 12 }]}>
+                        <TouchableOpacity
+                            style={styles.actionButton}
                             onPress={() => navigation.navigate('Messages')}
                         >
                             <Text style={styles.actionIcon}>💬</Text>
-                            <Text style={styles.actionText}>Message Trainer</Text>
+                            <Text style={styles.actionText}>Trainer</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

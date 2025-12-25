@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -9,456 +9,356 @@ import {
     Modal,
     TextInput,
     Alert,
+    Dimensions,
+    RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useFocusEffect } from '@react-navigation/native';
+import { LineChart } from "react-native-chart-kit"; // Ensure this is installed
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const ProgressScreen = () => {
-    // Sample data
-    // Stats State (Dynamic)
+    // State
+    const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [memberDetails, setMemberDetails] = useState({});
+
+    // Stats
+    const [weightHistory, setWeightHistory] = useState([]);
     const [currentWeight, setCurrentWeight] = useState(0);
     const [weightChange, setWeightChange] = useState(0);
-    const [streakDays, setStreakDays] = useState(0);
-    const [workoutsThisWeek, setWorkoutsThisWeek] = useState(0);
-    const [caloriesBurned, setCaloriesBurned] = useState(0);
-    const [totalMinutes, setTotalMinutes] = useState(0);
 
-    // Member details from onboarding
-    const [memberDetails, setMemberDetails] = useState({
-        name: '',
-        age: '',
-        gender: '',
-        height: '',
-        weight: '',
-        waist: '-',
-        hip: '-',
-        chest: '-',
-        arms: '-',
-        thighs: '-',
-        fitnessLevel: '',
-
-        primaryGoal: '',
-        experienceDuration: '',
-        workoutDays: '',
-        activityLevel: '',
+    const [workoutStats, setWorkoutStats] = useState({
+        workoutsThisWeek: 0,
+        caloriesBurned: 0,
+        totalMinutes: 0,
+        streakDays: 0,
+        history: []
     });
+
+    const [chartPeriod, setChartPeriod] = useState('3 Months'); // '1 Month', '3 Months', 'All'
+    const [personalRecords, setPersonalRecords] = useState([]);
+
+    // Edit Modal
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editedDetails, setEditedDetails] = useState({});
+    const [newWeight, setNewWeight] = useState('');
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            // 1. Profile
+            const profile = await api.getProfile();
+            setMemberDetails(profile);
+            setEditedDetails(profile);
+            if (profile.weight) {
+                setCurrentWeight(parseFloat(profile.weight));
+                setNewWeight(profile.weight);
+            }
+
+            // 2. Weight History (Last 90 days for now)
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDateObj = new Date();
+            startDateObj.setDate(startDateObj.getDate() - 90);
+            const startDate = startDateObj.toISOString().split('T')[0];
+
+            const weights = await api.getMeasurementHistory('weight', startDate, endDate);
+
+            // Format for Chart
+            // If empty, use current weight as single point
+            if (weights && weights.length > 0) {
+                const formatted = weights.map(w => ({
+                    value: parseFloat(w.value),
+                    date: w.date, // 'YYYY-MM-DD'
+                    label: new Date(w.date).getDate().toString() // Simple day label
+                }));
+                setWeightHistory(formatted);
+
+                // Calculate change (Last - First in period)
+                const first = formatted[0].value;
+                const last = formatted[formatted.length - 1].value;
+                setWeightChange((last - first).toFixed(1));
+            } else {
+                setWeightHistory([]);
+                setWeightChange(0);
+            }
+
+            // 3. Workout Stats (This Week)
+            try {
+                const today = new Date();
+                const firstDayOfWeek = new Date(today);
+                firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+                const endOfWeek = new Date(today);
+                endOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
+
+                const weekStart = firstDayOfWeek.toISOString().split('T')[0];
+
+                // Set end of week to end of the day to ensure we catch today's workouts
+                endOfWeek.setHours(23, 59, 59, 999);
+                const weekEnd = endOfWeek.toISOString(); // Send full ISO string to capture time
+
+                const sessions = await api.getWorkoutStats(weekStart, weekEnd);
+
+                // Aggregate
+                let count = 0;
+                let cals = 0;
+                let mins = 0;
+
+                if (sessions) {
+                    count = sessions.length;
+                    sessions.forEach(s => {
+                        if (s.metrics) {
+                            cals += (parseInt(s.metrics.caloriesBurned) || 0);
+                            mins += (parseInt(s.metrics.durationMinutes) || 0);
+                        } else if (s.completed_at && s.started_at) {
+                            const start = new Date(s.started_at);
+                            const end = new Date(s.completed_at);
+                            const diffMs = end - start;
+                            mins += Math.round(diffMs / 60000);
+                        }
+                    });
+                }
+
+                setWorkoutStats({
+                    workoutsThisWeek: count,
+                    caloriesBurned: cals,
+                    totalMinutes: mins,
+                    streakDays: 0,
+                    history: sessions || []
+                });
+            } catch (statsError) {
+                console.error("Failed to load workout stats:", statsError);
+                // Don't fail the whole screen
+            }
+
+            // 4. Personal Records
+            try {
+                const prs = await api.getPersonalRecords();
+                setPersonalRecords(prs || []);
+            } catch (prError) {
+                console.error("PR fetch failed:", prError);
+            }
+
+
+
+
+        } catch (error) {
+            console.error("Fetch Data Error:", error);
+            Alert.alert("Error", "Failed to load progress data");
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, []);
 
     useFocusEffect(
-        React.useCallback(() => {
-            api.getProfile().then(data => {
-                if (data) {
-                    setMemberDetails(prev => ({ ...prev, ...data }));
-                    if (data.weight) setCurrentWeight(parseFloat(data.weight));
-                }
-            }).catch(e => console.error("Progress Screen load error:", e));
-        }, [])
+        useCallback(() => {
+            fetchData();
+        }, [fetchData])
     );
 
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editedDetails, setEditedDetails] = useState({ ...memberDetails });
-    const [showDropdown, setShowDropdown] = useState({
-        fitnessLevel: false,
-        primaryGoal: false,
-        experienceDuration: false,
-    });
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchData();
+    };
 
-    // Dropdown options (from onboarding)
-    const fitnessLevelOptions = ['Beginner', 'Intermediate', 'Advanced'];
-    const goalOptions = ['Lose Weight', 'Build Muscle', 'Get Toned', 'Improve Endurance', 'General Fitness'];
-    const experienceOptions = ['Never', 'Less than 6 months', '6 months - 1 year', '1-2 years', '2+ years'];
+    const handleSaveDetails = async () => {
+        try {
+            // Update Profile
+            const profileToUpdate = { ...editedDetails, weight: newWeight };
+            await api.updateProfile(profileToUpdate);
 
-    const [completedWorkouts, setCompletedWorkouts] = useState([]);
+            // Log Weight if changed
+            if (newWeight && parseFloat(newWeight) !== parseFloat(currentWeight)) {
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    await api.logMeasurement(today, 'weight', parseFloat(newWeight));
+                } catch (logError) {
+                    console.error("Failed to log measurement history:", logError);
+                    // Don't block UI update if only history logging fails
+                }
+            }
 
-    const handleSaveDetails = () => {
-        // optimistically update UI or show loading
-        api.updateProfile(editedDetails).then(() => {
-            setMemberDetails(editedDetails);
-            if (editedDetails.weight) setCurrentWeight(parseFloat(editedDetails.weight));
+            Alert.alert('Success', 'Profile updated');
             setShowEditModal(false);
-            Alert.alert('Success', 'Your details have been updated!');
-        }).catch(err => {
-            console.error("Failed to save details:", err);
-            Alert.alert("Error", "Could not save changes to backend.");
-        });
-    };
-
-    const handleCancelEdit = () => {
-        setEditedDetails({ ...memberDetails });
-        setShowEditModal(false);
-        setShowDropdown({ fitnessLevel: false, primaryGoal: false, experienceDuration: false });
-    };
-
-    const selectDropdownOption = (field, value) => {
-        setEditedDetails({ ...editedDetails, [field]: value });
-        setShowDropdown({ ...showDropdown, [field]: false });
-    };
-
-    // Generate streak calendar (7 columns x 5 rows = 35 days)
-    const generateStreakCalendar = () => {
-        const days = [];
-        for (let i = 0; i < 35; i++) {
-            const isActive = i >= 35 - streakDays;
-            days.push(
-                <View
-                    key={i}
-                    style={[styles.calendarDay, isActive && styles.calendarDayActive]}
-                />
-            );
+            onRefresh(); // Reload data
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'Failed to save profile');
         }
-        return days;
+    };
+
+    // Chart Config
+    const chartConfig = {
+        backgroundGradientFrom: "#ffffff",
+        backgroundGradientTo: "#ffffff",
+        color: (opacity = 1) => `rgba(49, 130, 206, ${opacity})`,
+        strokeWidth: 2,
+        barPercentage: 0.5,
+        useShadowColorFromDataset: false
     };
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-
-                {/* 1. Header */}
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={styles.contentContainer}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
+            >
                 <Text style={styles.headerTitle}>Progress</Text>
 
-                {/* Member Details Card */}
+                {/* 1. Weight Chart */}
                 <View style={styles.card}>
-                    <View style={styles.detailsHeader}>
-                        <Text style={styles.cardTitle}>My Details</Text>
-                        <TouchableOpacity onPress={() => setShowEditModal(true)}>
-                            <Ionicons name="create-outline" size={24} color="#3182CE" />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.detailsGrid}>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Name</Text>
-                            <Text style={styles.detailValue}>{memberDetails.name}</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Age</Text>
-                            <Text style={styles.detailValue}>{memberDetails.age}</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Gender</Text>
-                            <Text style={styles.detailValue}>{memberDetails.gender}</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Height</Text>
-                            <Text style={styles.detailValue}>{memberDetails.height} cm</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Weight</Text>
-                            <Text style={styles.detailValue}>{memberDetails.weight} kg</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Fitness Level</Text>
-                            <Text style={styles.detailValue}>{memberDetails.fitnessLevel}</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Goal</Text>
-                            <Text style={styles.detailValue}>{memberDetails.primaryGoal}</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Experience</Text>
-                            <Text style={styles.detailValue}>{memberDetails.experienceDuration}</Text>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>Weight Trend</Text>
+                        <View style={styles.badge}>
+                            <Text style={styles.badgeText}>{chartPeriod}</Text>
                         </View>
                     </View>
 
-                    {/* Body Measurements Section */}
-                    <Text style={styles.measurementsTitle}>Body Measurements</Text>
-                    <View style={styles.detailsGrid}>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Waist</Text>
-                            <Text style={styles.detailValue}>{memberDetails.waist} inches</Text>
+                    {weightHistory.length > 1 ? (
+                        <LineChart
+                            data={{
+                                labels: weightHistory.map(w => w.label).filter((_, i) => i % Math.ceil(weightHistory.length / 6) === 0), // Thin out labels
+                                datasets: [{ data: weightHistory.map(w => w.value) }]
+                            }}
+                            width={SCREEN_WIDTH - 60}
+                            height={220}
+                            yAxisSuffix="kg"
+                            chartConfig={chartConfig}
+                            bezier
+                            style={{ marginVertical: 8, borderRadius: 16 }}
+                        />
+                    ) : (
+                        <View style={styles.emptyChart}>
+                            <Text style={styles.emptyText}>Not enough data for chart yet.</Text>
+                            <Text style={styles.emptyText}>Log your weight to see trends.</Text>
                         </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Hip</Text>
-                            <Text style={styles.detailValue}>{memberDetails.hip} inches</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Chest</Text>
-                            <Text style={styles.detailValue}>{memberDetails.chest} inches</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Arms</Text>
-                            <Text style={styles.detailValue}>{memberDetails.arms} inches</Text>
-                        </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Thighs</Text>
-                            <Text style={styles.detailValue}>{memberDetails.thighs} inches</Text>
-                        </View>
-                    </View>
-                </View>
+                    )}
 
-                {/* 2. Weight Trend Card */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Weight Progress</Text>
-
-                    <View style={styles.weightGraphPlaceholder}>
-                        <Text style={styles.graphPlaceholderText}>📈 Weight Trend Graph</Text>
-                    </View>
-
-                    <View style={styles.weightStats}>
-                        <View style={styles.weightStatItem}>
-                            <Text style={styles.weightStatLabel}>Current Weight</Text>
-                            <Text style={styles.weightStatValue}>{currentWeight} kg</Text>
+                    <View style={styles.statsRow}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statLabel}>Current</Text>
+                            <Text style={styles.statValue}>{currentWeight} kg</Text>
                         </View>
-                        <View style={styles.weightStatItem}>
-                            <Text style={styles.weightStatLabel}>Change</Text>
-                            <Text style={[styles.weightStatValue, styles.weightChange]}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statLabel}>Change</Text>
+                            <Text style={[styles.statValue, { color: weightChange > 0 ? '#48BB78' : weightChange < 0 ? '#3182CE' : '#718096' }]}>
                                 {weightChange > 0 ? '+' : ''}{weightChange} kg
                             </Text>
                         </View>
                     </View>
                 </View>
 
-                {/* 3. Streak Calendar */}
-                <View style={styles.card}>
-                    <View style={styles.streakHeader}>
-                        <Text style={styles.cardTitle}>Workout Streak</Text>
-                        <View style={styles.streakBadge}>
-                            <Text style={styles.streakBadgeText}>🔥 {streakDays} Days</Text>
+                {/* 2. Personal Records */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>🏆 Personal Records</Text>
+                    {personalRecords.length > 0 ? (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginLeft: -20, paddingLeft: 20 }}>
+                            {personalRecords.map((pr, idx) => (
+                                <View key={idx} style={styles.prCard}>
+                                    <Text style={styles.prValue}>{pr.max_weight}<Text style={styles.prUnit}>kg</Text></Text>
+                                    <Text style={styles.prLabel} numberOfLines={1}>{pr.exercise_name}</Text>
+                                </View>
+                            ))}
+                        </ScrollView>
+                    ) : (
+                        <View style={styles.emptyPrCard}>
+                            <Text style={styles.emptyText}>No records yet. Log a workout!</Text>
                         </View>
-                    </View>
-
-                    <View style={styles.calendarGrid}>
-                        {generateStreakCalendar()}
-                    </View>
+                    )}
                 </View>
 
-                {/* 4. Weekly Summary Cards */}
+                {/* 3. Weekly Stats */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>This Week</Text>
                     <View style={styles.summaryRow}>
                         <View style={styles.summaryCard}>
                             <Text style={styles.summaryIcon}>💪</Text>
-                            <Text style={styles.summaryValue}>{workoutsThisWeek}</Text>
+                            <Text style={styles.summaryValue}>{workoutStats.workoutsThisWeek}</Text>
                             <Text style={styles.summaryLabel}>Workouts</Text>
                         </View>
                         <View style={styles.summaryCard}>
                             <Text style={styles.summaryIcon}>🔥</Text>
-                            <Text style={styles.summaryValue}>{caloriesBurned}</Text>
+                            <Text style={styles.summaryValue}>{workoutStats.caloriesBurned}</Text>
                             <Text style={styles.summaryLabel}>Calories</Text>
                         </View>
                         <View style={styles.summaryCard}>
                             <Text style={styles.summaryIcon}>⏱</Text>
-                            <Text style={styles.summaryValue}>{totalMinutes}</Text>
+                            <Text style={styles.summaryValue}>{workoutStats.totalMinutes}</Text>
                             <Text style={styles.summaryLabel}>Minutes</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* 5. Completed Workouts List */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Completed Workouts</Text>
-                    {completedWorkouts.map((workout) => (
-                        <View key={workout.id} style={styles.workoutItem}>
-                            <View style={styles.statusDot} />
-                            <View style={styles.workoutInfo}>
-                                <Text style={styles.workoutTitle}>{workout.title}</Text>
-                                <Text style={styles.workoutMeta}>
-                                    {workout.date} • {workout.duration}
-                                </Text>
-                            </View>
+                {/* 3. My Details Snippet */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>My Details</Text>
+                        <TouchableOpacity onPress={() => setShowEditModal(true)}>
+                            <Ionicons name="create-outline" size={24} color="#3182CE" />
+                        </TouchableOpacity>
+                    </View>
+                    <View style={styles.detailsGrid}>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Height</Text>
+                            <Text style={styles.detailValue}>{memberDetails.height || '-'} cm</Text>
                         </View>
-                    ))}
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Weight</Text>
+                            <Text style={styles.detailValue}>{memberDetails.weight || '-'} kg</Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>BMI</Text>
+                            <Text style={styles.detailValue}>
+                                {memberDetails.weight && memberDetails.height
+                                    ? (memberDetails.weight / ((memberDetails.height / 100) ** 2)).toFixed(1)
+                                    : '-'}
+                            </Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Waist</Text>
+                            <Text style={styles.detailValue}>{memberDetails.waist || '-'} "</Text>
+                        </View>
+                    </View>
                 </View>
 
-                <View style={styles.bottomSpacer} />
             </ScrollView>
 
-            {/* Edit Details Modal */}
-            <Modal
-                visible={showEditModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={handleCancelEdit}
-            >
+            {/* Edit Modal (Simplified for brevity) */}
+            <Modal visible={showEditModal} animationType="slide" transparent={true}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Edit My Details</Text>
-                            <TouchableOpacity onPress={handleCancelEdit}>
-                                <Ionicons name="close" size={24} color="#2D3748" />
+                            <Text style={styles.modalTitle}>Update Body Stats</Text>
+                            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                                <Ionicons name="close" size={24} color="#000" />
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView>
-                            <Text style={styles.inputLabel}>Name</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={editedDetails.name}
-                                onChangeText={(text) => setEditedDetails({ ...editedDetails, name: text })}
-                            />
+                        <Text style={styles.label}>Weight (kg)</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={newWeight ? String(newWeight) : ''}
+                            onChangeText={setNewWeight}
+                            keyboardType="numeric"
+                        />
 
-                            <View style={styles.inputRow}>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Age</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.age}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, age: text })}
-                                    />
-                                </View>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Gender</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.gender}
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, gender: text })}
-                                    />
-                                </View>
-                            </View>
+                        <Text style={styles.label}>Waist (inches)</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={editedDetails.waist}
+                            onChangeText={t => setEditedDetails({ ...editedDetails, waist: t })}
+                            keyboardType="numeric"
+                        />
 
-                            <View style={styles.inputRow}>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Height (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.height}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, height: text })}
-                                    />
-                                </View>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Weight (kg)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.weight}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, weight: text })}
-                                    />
-                                </View>
-                            </View>
-
-                            {/* Body Measurements */}
-                            <Text style={styles.sectionLabel}>Body Measurements (inches)</Text>
-
-                            <View style={styles.inputRow}>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Waist</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.waist}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, waist: text })}
-                                    />
-                                </View>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Hip</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.hip}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, hip: text })}
-                                    />
-                                </View>
-                            </View>
-
-                            <View style={styles.inputRow}>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Chest</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.chest}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, chest: text })}
-                                    />
-                                </View>
-                                <View style={styles.inputHalf}>
-                                    <Text style={styles.inputLabel}>Arms</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.arms}
-                                        keyboardType="numeric"
-                                        onChangeText={(text) => setEditedDetails({ ...editedDetails, arms: text })}
-                                    />
-                                </View>
-                            </View>
-
-                            <Text style={styles.inputLabel}>Thighs</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={editedDetails.thighs}
-                                keyboardType="numeric"
-                                onChangeText={(text) => setEditedDetails({ ...editedDetails, thighs: text })}
-                            />
-
-                            {/* Fitness Level Dropdown */}
-                            <Text style={styles.inputLabel}>Fitness Level</Text>
-                            <TouchableOpacity
-                                style={styles.dropdown}
-                                onPress={() => setShowDropdown({ ...showDropdown, fitnessLevel: !showDropdown.fitnessLevel })}
-                            >
-                                <Text style={styles.dropdownText}>{editedDetails.fitnessLevel}</Text>
-                                <Ionicons name="chevron-down" size={20} color="#718096" />
-                            </TouchableOpacity>
-                            {showDropdown.fitnessLevel && (
-                                <View style={styles.dropdownList}>
-                                    {fitnessLevelOptions.map((option) => (
-                                        <TouchableOpacity
-                                            key={option}
-                                            style={styles.dropdownItem}
-                                            onPress={() => selectDropdownOption('fitnessLevel', option)}
-                                        >
-                                            <Text style={styles.dropdownItemText}>{option}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
-
-                            {/* Primary Goal Dropdown */}
-                            <Text style={styles.inputLabel}>Primary Goal</Text>
-                            <TouchableOpacity
-                                style={styles.dropdown}
-                                onPress={() => setShowDropdown({ ...showDropdown, primaryGoal: !showDropdown.primaryGoal })}
-                            >
-                                <Text style={styles.dropdownText}>{editedDetails.primaryGoal}</Text>
-                                <Ionicons name="chevron-down" size={20} color="#718096" />
-                            </TouchableOpacity>
-                            {showDropdown.primaryGoal && (
-                                <View style={styles.dropdownList}>
-                                    {goalOptions.map((option) => (
-                                        <TouchableOpacity
-                                            key={option}
-                                            style={styles.dropdownItem}
-                                            onPress={() => selectDropdownOption('primaryGoal', option)}
-                                        >
-                                            <Text style={styles.dropdownItemText}>{option}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
-
-                            {/* Experience Dropdown */}
-                            <Text style={styles.inputLabel}>Experience</Text>
-                            <TouchableOpacity
-                                style={styles.dropdown}
-                                onPress={() => setShowDropdown({ ...showDropdown, experienceDuration: !showDropdown.experienceDuration })}
-                            >
-                                <Text style={styles.dropdownText}>{editedDetails.experienceDuration}</Text>
-                                <Ionicons name="chevron-down" size={20} color="#718096" />
-                            </TouchableOpacity>
-                            {showDropdown.experienceDuration && (
-                                <View style={styles.dropdownList}>
-                                    {experienceOptions.map((option) => (
-                                        <TouchableOpacity
-                                            key={option}
-                                            style={styles.dropdownItem}
-                                            onPress={() => selectDropdownOption('experienceDuration', option)}
-                                        >
-                                            <Text style={styles.dropdownItemText}>{option}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
-
-                            <View style={styles.modalButtons}>
-                                <TouchableOpacity style={styles.cancelButton} onPress={handleCancelEdit}>
-                                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
-                                    <Text style={styles.saveButtonText}>Save Changes</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </ScrollView>
+                        <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
+                            <Text style={styles.saveButtonText}>Save & Log</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -467,334 +367,81 @@ const ProgressScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#F5F7FA',
-    },
-    container: {
-        flex: 1,
-    },
-    contentContainer: {
-        padding: 20,
-        paddingBottom: 100,
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#1A202C',
-        marginBottom: 24,
-    },
-    card: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 3,
-    },
-    detailsHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    cardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#2D3748',
-    },
-    measurementsTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#2D3748',
-        marginTop: 16,
-        marginBottom: 12,
-    },
-    detailsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-    },
-    detailItem: {
-        width: '48%',
-        marginBottom: 16,
-    },
-    detailLabel: {
-        fontSize: 12,
-        color: '#718096',
-        marginBottom: 4,
-    },
-    detailValue: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#2D3748',
-    },
-    weightGraphPlaceholder: {
-        height: 150,
-        backgroundColor: '#EDF2F7',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        borderStyle: 'dashed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    graphPlaceholderText: {
-        fontSize: 16,
-        color: '#A0AEC0',
-    },
-    weightStats: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-    },
-    weightStatItem: {
-        alignItems: 'center',
-    },
-    weightStatLabel: {
-        fontSize: 12,
-        color: '#718096',
-        marginBottom: 4,
-    },
-    weightStatValue: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#2D3748',
-    },
-    weightChange: {
-        color: '#48BB78',
-    },
-    streakHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    streakBadge: {
-        backgroundColor: '#FED7D7',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    streakBadgeText: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#C53030',
-    },
-    calendarGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-    },
-    calendarDay: {
-        width: '12%',
-        aspectRatio: 1,
-        backgroundColor: '#E2E8F0',
-        borderRadius: 6,
-        marginBottom: 8,
-    },
-    calendarDayActive: {
-        backgroundColor: '#3182CE',
-    },
-    section: {
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#2D3748',
-        marginBottom: 12,
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    summaryCard: {
+    safeArea: { flex: 1, backgroundColor: '#F5F7FA' },
+    container: { flex: 1 },
+    contentContainer: { padding: 20, paddingBottom: 100 },
+    headerTitle: { fontSize: 28, fontWeight: '800', color: '#1A202C', marginBottom: 20 },
+    card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+    cardTitle: { fontSize: 18, fontWeight: '700', color: '#2D3748' },
+    badge: { backgroundColor: '#EBF8FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+    badgeText: { color: '#3182CE', fontSize: 12, fontWeight: '600' },
+
+    emptyChart: { height: 180, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FAFC', borderRadius: 12 },
+    emptyText: { color: '#718096', fontSize: 16, fontWeight: '600' },
+    emptySubText: { color: '#A0AEC0', fontSize: 14, marginTop: 4 },
+
+    statsRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 15 },
+    statItem: { alignItems: 'center' },
+    statLabel: { fontSize: 12, color: '#718096', marginBottom: 4 },
+    statValue: { fontSize: 20, fontWeight: '700', color: '#2D3748' },
+
+    section: { marginBottom: 20 },
+    sectionTitle: { fontSize: 18, fontWeight: '700', color: '#2D3748', marginBottom: 12 },
+    summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    summaryCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, width: '31%', alignItems: 'center', shadowOpacity: 0.05, elevation: 2 },
+    summaryIcon: { fontSize: 24, marginBottom: 8 },
+    summaryValue: { fontSize: 18, fontWeight: '700', color: '#2D3748' },
+    summaryLabel: { fontSize: 11, color: '#718096' },
+
+    detailsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+    detailItem: { width: '48%', marginBottom: 15 },
+    detailLabel: { fontSize: 12, color: '#718096' },
+    detailValue: { fontSize: 16, fontWeight: '600', color: '#2D3748' },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+    modalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 20 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 20, fontWeight: '700' },
+    label: { fontSize: 14, fontWeight: '600', color: '#4A5568', marginTop: 10, marginBottom: 5 },
+    input: { backgroundColor: '#F7FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, fontSize: 16 },
+    saveButton: { backgroundColor: '#3182CE', marginTop: 20, padding: 15, borderRadius: 12, alignItems: 'center' },
+    saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+    prCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 12,
         padding: 16,
-        width: '31%',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    summaryIcon: {
-        fontSize: 24,
-        marginBottom: 8,
-    },
-    summaryValue: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#2D3748',
-        marginBottom: 4,
-    },
-    summaryLabel: {
-        fontSize: 11,
-        color: '#718096',
-        textAlign: 'center',
-    },
-    workoutItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    statusDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#48BB78',
         marginRight: 12,
+        width: 120,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    workoutInfo: {
-        flex: 1,
-    },
-    workoutTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#2D3748',
+    prValue: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#2B6CB0',
         marginBottom: 4,
     },
-    workoutMeta: {
-        fontSize: 13,
-        color: '#A0AEC0',
-    },
-    bottomSpacer: {
-        height: 20,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        padding: 20,
-        maxHeight: '90%',
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#2D3748',
-    },
-    sectionLabel: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#2D3748',
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    inputLabel: {
+    prUnit: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#4A5568',
-        marginBottom: 8,
-        marginTop: 8,
+        color: '#718096',
     },
-    input: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 10,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        fontSize: 15,
-        color: '#2D3748',
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    inputRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    inputHalf: {
-        width: '48%',
-    },
-    dropdown: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 10,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    dropdownText: {
-        fontSize: 15,
-        color: '#2D3748',
-    },
-    dropdownList: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        marginTop: 4,
-        maxHeight: 200,
-    },
-    dropdownItem: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E2E8F0',
-    },
-    dropdownItemText: {
-        fontSize: 15,
-        color: '#2D3748',
-    },
-    modalButtons: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 24,
-        marginBottom: 20,
-    },
-    cancelButton: {
-        flex: 1,
-        borderRadius: 12,
-        paddingVertical: 14,
-        alignItems: 'center',
-        marginRight: 8,
-        borderWidth: 2,
-        borderColor: '#E2E8F0',
-    },
-    cancelButtonText: {
-        fontSize: 16,
-        fontWeight: '700',
+    prLabel: {
+        fontSize: 12,
+        fontWeight: '600',
         color: '#4A5568',
     },
-    saveButton: {
-        flex: 1,
-        backgroundColor: '#3182CE',
+    emptyPrCard: {
+        padding: 20,
+        backgroundColor: '#F7FAFC',
         borderRadius: 12,
-        paddingVertical: 14,
         alignItems: 'center',
-        marginLeft: 8,
-    },
-    saveButtonText: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#FFFFFF',
-    },
+    }
 });
 
 export default ProgressScreen;

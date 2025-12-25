@@ -8,10 +8,26 @@ import {
     TouchableOpacity,
     SafeAreaView,
     Modal,
+    Alert
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-const WorkoutDetailScreen = ({ navigation }) => {
+import { api } from '../../services/api';
+
+const WorkoutDetailScreen = ({ route, navigation }) => {
+    const { workoutId, assignmentId, title, status } = route.params || {};
+    const [loading, setLoading] = useState(true);
+    const [workout, setWorkout] = useState(null);
     const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+    const [isCompleted, setIsCompleted] = useState(status === 'completed');
+
+    // Helper to get consistent exercise ID
+    const getExerciseId = (exercise, index) => {
+        if (exercise && exercise.id) return exercise.id.toString();
+        // Fallback to index if no ID, but ensure string
+        return index.toString();
+    };
+
     const [showDemoModal, setShowDemoModal] = useState(false);
     const [selectedExercise, setSelectedExercise] = useState(null);
     const [loggedSets, setLoggedSets] = useState({});
@@ -20,108 +36,199 @@ const WorkoutDetailScreen = ({ navigation }) => {
         reps: '',
         notes: '',
     });
+    const [editingSet, setEditingSet] = useState(null); // { exerciseId, index }
 
-    // Sample workout data
-    const workout = {
-        title: 'Full Body Strength',
-        day: 1,
-        week: 1,
-        totalExercises: 5,
-        duration: '45 min',
-        calories: '350 kcal',
-        exercises: [
-            {
-                id: 1,
-                name: 'Barbell Squats',
-                sets: 4,
-                reps: 12,
-                restTime: '60 sec',
-                instructions: [
-                    'Stand with feet shoulder-width apart',
-                    'Lower your body by bending knees',
-                    'Keep back straight and chest up',
-                    'Push through heels to return to start',
-                ],
-            },
-            {
-                id: 2,
-                name: 'Bench Press',
-                sets: 4,
-                reps: 10,
-                restTime: '90 sec',
-                instructions: [
-                    'Lie flat on bench',
-                    'Grip bar slightly wider than shoulders',
-                    'Lower bar to chest',
-                    'Press up explosively',
-                ],
-            },
-            {
-                id: 3,
-                name: 'Bent Over Rows',
-                sets: 3,
-                reps: 12,
-                restTime: '60 sec',
-                instructions: [
-                    'Bend at hips with slight knee bend',
-                    'Pull bar to lower chest',
-                    'Squeeze shoulder blades together',
-                    'Lower with control',
-                ],
-            },
-            {
-                id: 4,
-                name: 'Overhead Press',
-                sets: 3,
-                reps: 10,
-                restTime: '90 sec',
-                instructions: [
-                    'Stand with feet hip-width apart',
-                    'Press bar overhead',
-                    'Keep core tight',
-                    'Lower to shoulders',
-                ],
-            },
-            {
-                id: 5,
-                name: 'Deadlifts',
-                sets: 3,
-                reps: 8,
-                restTime: '120 sec',
-                instructions: [
-                    'Stand with feet hip-width apart',
-                    'Grip bar outside knees',
-                    'Lift by extending hips and knees',
-                    'Keep bar close to body',
-                ],
-            },
-        ],
-    };
+    // Load Workout Data
+    React.useEffect(() => {
+        const loadData = async () => {
+            if (!workoutId) return;
+            try {
+                const [data, logs] = await Promise.all([
+                    api.getWorkoutDetail(workoutId),
+                    api.getWorkoutLogs(assignmentId)
+                ]);
 
-    const currentExercise = workout.exercises[currentExerciseIndex];
+                // Ensure data structure matches UI expectations
+                setWorkout({
+                    ...data,
+                    day: data.metadata?.day || 1, // Fallback
+                    week: data.metadata?.week || 1,
+                    totalExercises: data.exercises?.length || 0,
+                    // Ensure generic fields if missing
+                    title: data.title || title,
+                    exercises: data.exercises || []
+                });
 
-    const handleLogSet = () => {
+                console.log("WorkoutDetail: Fetched logs:", logs);
+
+                // Process Logs
+                if (logs && logs.length > 0) {
+                    const logsByExercise = {};
+                    logs.forEach(log => {
+                        // Backend logs use 'exercise_id' (snake_case)
+                        // Make sure we convert to string for consistency
+                        const exId = log.exercise_id.toString();
+
+                        if (!logsByExercise[exId]) {
+                            logsByExercise[exId] = [];
+                        }
+                        // Transform snake_case log to camelCase for UI
+                        logsByExercise[exId].push({
+                            id: log.id, // Store ID for updates/deletion
+                            setNumber: log.set_number,
+                            weight: log.weight,
+                            reps: log.reps,
+                            notes: log.notes
+                        });
+                    });
+                    setLoggedSets(logsByExercise);
+                }
+
+            } catch (error) {
+                console.error("Failed to load workout:", error);
+                alert("Failed to load workout details.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, [workoutId, assignmentId]);
+
+    const handleLogSet = async () => {
         if (!currentLog.weight || !currentLog.reps) {
+            alert("Please enter weight and reps");
             return;
         }
 
-        const exerciseId = currentExercise.id;
-        const existingSets = loggedSets[exerciseId] || [];
-        const newSet = {
-            setNumber: existingSets.length + 1,
-            weight: currentLog.weight,
-            reps: currentLog.reps,
-            notes: currentLog.notes,
-        };
+        const currentExercise = workout.exercises[currentExerciseIndex];
+        const exerciseId = getExerciseId(currentExercise, currentExerciseIndex);
 
-        setLoggedSets({
-            ...loggedSets,
-            [exerciseId]: [...existingSets, newSet],
-        });
+        console.log("HandleLogSet: ExerciseId:", exerciseId, "EditingSet:", editingSet);
 
-        setCurrentLog({ weight: '', reps: '', notes: '' });
+        try {
+            // Check if we are in Edit Mode for THIS exercise
+            if (editingSet && editingSet.exerciseId === exerciseId) {
+                // UPDATE EXISTING SET (Server-Side Persisted)
+                const index = editingSet.index;
+                const updatedSets = [...(loggedSets[exerciseId] || [])];
+                const oldSet = updatedSets[index];
+
+                // Call API to Update (Upsert)
+                // We pass the ID so the backend updates the record instead of creating new
+                const response = await api.logWorkoutSet({
+                    id: oldSet.id,
+                    assignmentId,
+                    exerciseId: exerciseId,
+                    exerciseName: currentExercise.name,
+                    setNumber: oldSet.setNumber,
+                    weight: currentLog.weight,
+                    reps: currentLog.reps,
+                    notes: currentLog.notes
+                });
+
+                if (updatedSets[index]) {
+                    updatedSets[index] = {
+                        ...updatedSets[index],
+                        id: response.id || oldSet.id, // Ensure ID is preserved/updated
+                        weight: currentLog.weight,
+                        reps: currentLog.reps,
+                        notes: currentLog.notes
+                    };
+
+                    setLoggedSets({
+                        ...loggedSets,
+                        [exerciseId]: updatedSets
+                    });
+                    console.log("Updated set on server:", response);
+                }
+
+                setEditingSet(null);
+                setCurrentLog({ weight: '', reps: '', notes: '' });
+
+            } else {
+                // CREATE NEW SET
+                const setNumber = (loggedSets[exerciseId] || []).length + 1;
+
+                // Call API for creation
+                const response = await api.logWorkoutSet({
+                    assignmentId,
+                    exerciseId: exerciseId,
+                    exerciseName: currentExercise.name,
+                    setNumber,
+                    weight: currentLog.weight,
+                    reps: currentLog.reps,
+                    notes: currentLog.notes
+                });
+
+                const newSet = {
+                    id: response.id, // Capture ID
+                    setNumber,
+                    weight: currentLog.weight,
+                    reps: currentLog.reps,
+                    notes: currentLog.notes,
+                };
+
+                setLoggedSets({
+                    ...loggedSets,
+                    [exerciseId]: [...(loggedSets[exerciseId] || []), newSet],
+                });
+
+                setCurrentLog({ weight: '', reps: '', notes: '' });
+                console.log("Created new set:", newSet);
+            }
+
+        } catch (error) {
+            console.error("Failed to log set:", error);
+            alert("Failed to save log. Please try again.");
+        }
     };
 
+    const handleDeleteSet = async (exerciseId, index) => {
+        console.log("Deleting set:", exerciseId, index);
+        try {
+            const sets = loggedSets[exerciseId];
+            if (!sets) return;
+
+            const setToDelete = sets[index];
+
+            // Call Backend to Delete
+            if (setToDelete.id) {
+                await api.deleteWorkoutLog(setToDelete.id);
+                console.log("Deleted set from server with ID:", setToDelete.id);
+            }
+
+            // Local Delete
+            const updatedSets = [...sets];
+            updatedSets.splice(index, 1);
+
+            setLoggedSets({
+                ...loggedSets,
+                [exerciseId]: updatedSets
+            });
+
+            // Exit edit mode if filtering the edited one
+            if (editingSet && editingSet.exerciseId === exerciseId && editingSet.index === index) {
+                setEditingSet(null);
+                setCurrentLog({ weight: '', reps: '', notes: '' });
+            }
+        } catch (error) {
+            console.error("Failed to delete set:", error);
+            alert("Failed to delete set. Please try again.");
+        }
+    };
+
+    const handleEditSet = (exerciseId, index) => {
+        console.log("Editing set:", exerciseId, index);
+        const set = loggedSets[exerciseId][index];
+        setCurrentLog({
+            weight: set.weight.toString(),
+            reps: set.reps.toString(),
+            notes: set.notes || ''
+        });
+        setEditingSet({ exerciseId, index });
+    };
+
+    // ... Navigation handlers ...
     const handleViewDemo = (exercise) => {
         setSelectedExercise(exercise);
         setShowDemoModal(true);
@@ -140,24 +247,44 @@ const WorkoutDetailScreen = ({ navigation }) => {
     };
 
     const calculateProgress = () => {
+        if (isCompleted || status === 'completed') return 100;
         const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets, 0);
-        const completedSets = Object.values(loggedSets).reduce(
-            (sum, sets) => sum + sets.length,
-            0
-        );
+        const completedSets = Object.values(loggedSets).reduce((sum, sets) => sum + sets.length, 0);
         return Math.round((completedSets / totalSets) * 100);
     };
 
-    const handleCompleteWorkout = () => {
-        alert('Congratulations! Workout completed! 🎉');
-        navigation.goBack();
+    const handleCompleteWorkout = async () => {
+        try {
+            await api.completeWorkout(assignmentId);
+            setIsCompleted(true);
+            alert('Congratulations! Workout completed! 🎉');
+            navigation.navigate('MainApp', { screen: 'WorkoutPlans' });
+        } catch (error) {
+            console.error("Failed to complete workout:", error);
+            alert("Failed to mark workout as complete.");
+        }
     };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={styles.safeArea}>
+                <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text>Loading workout...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    if (!workout) return null;
+
+    const currentExercise = workout.exercises[currentExerciseIndex];
+    const currentExId = getExerciseId(currentExercise, currentExerciseIndex);
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
 
-                {/* 1. Header */}
+                {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Text style={styles.backButtonText}>← Back</Text>
@@ -168,7 +295,7 @@ const WorkoutDetailScreen = ({ navigation }) => {
                     </View>
                 </View>
 
-                {/* 2. Workout Summary Card */}
+                {/* Summary */}
                 <View style={styles.summaryCard}>
                     <Text style={styles.summaryTitle}>{workout.title}</Text>
                     <View style={styles.summaryRow}>
@@ -180,14 +307,10 @@ const WorkoutDetailScreen = ({ navigation }) => {
                             <Text style={styles.summaryValue}>{workout.duration}</Text>
                             <Text style={styles.summaryLabel}>Duration</Text>
                         </View>
-                        <View style={styles.summaryItem}>
-                            <Text style={styles.summaryValue}>{workout.calories}</Text>
-                            <Text style={styles.summaryLabel}>Calories</Text>
-                        </View>
                     </View>
                 </View>
 
-                {/* 3. Current Exercise Card */}
+                {/* Current Exercise */}
                 <View style={styles.exerciseCard}>
                     <View style={styles.exerciseHeader}>
                         <Text style={styles.exerciseNumber}>
@@ -214,17 +337,26 @@ const WorkoutDetailScreen = ({ navigation }) => {
                         </View>
                     </View>
 
-                    <TouchableOpacity
-                        style={styles.demoButton}
-                        onPress={() => handleViewDemo(currentExercise)}
-                    >
+                    <TouchableOpacity style={styles.demoButton} onPress={() => handleViewDemo(currentExercise)}>
                         <Text style={styles.demoButtonText}>View Demo Video</Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* 4. Logging Section */}
-                <View style={styles.loggingCard}>
-                    <Text style={styles.loggingTitle}>Log Your Set</Text>
+                {/* Logging Section */}
+                <View style={[styles.loggingCard, editingSet && styles.loggingCardEditing]}>
+                    <View style={styles.loggingHeaderRow}>
+                        <Text style={styles.loggingTitle}>
+                            {editingSet ? 'Update Set' : 'Log Your Set'}
+                        </Text>
+                        {editingSet && (
+                            <TouchableOpacity onPress={() => {
+                                setEditingSet(null);
+                                setCurrentLog({ weight: '', reps: '', notes: '' });
+                            }}>
+                                <Text style={styles.cancelEditText}>Cancel</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
 
                     <View style={styles.inputRow}>
                         <View style={styles.inputContainer}>
@@ -257,29 +389,53 @@ const WorkoutDetailScreen = ({ navigation }) => {
                         onChangeText={(text) => setCurrentLog({ ...currentLog, notes: text })}
                     />
 
-                    <TouchableOpacity style={styles.logButton} onPress={handleLogSet}>
-                        <Text style={styles.logButtonText}>Log Set</Text>
+                    <TouchableOpacity
+                        style={[styles.logButton, editingSet && styles.logButtonEditing]}
+                        onPress={handleLogSet}
+                    >
+                        <Text style={styles.logButtonText}>
+                            {editingSet ? 'Update Set' : 'Log Set'}
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* 5. Logged Sets */}
-                {loggedSets[currentExercise.id] && loggedSets[currentExercise.id].length > 0 && (
+                {/* Logged Sets */}
+                {loggedSets[currentExId] && loggedSets[currentExId].length > 0 && (
                     <View style={styles.loggedSetsCard}>
                         <Text style={styles.loggedSetsTitle}>Completed Sets</Text>
-                        {loggedSets[currentExercise.id].map((set, index) => (
+                        {loggedSets[currentExId].map((set, index) => (
                             <View key={index} style={styles.setChip}>
-                                <Text style={styles.setChipText}>
-                                    ⭕ Set {set.setNumber}: {set.reps} reps — {set.weight}kg
-                                </Text>
-                                {set.notes && (
-                                    <Text style={styles.setChipNotes}>Note: {set.notes}</Text>
-                                )}
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.setChipText}>
+                                        ⭕ Set {set.setNumber}: {set.reps} reps — {set.weight}kg
+                                    </Text>
+                                    {set.notes && (
+                                        <Text style={styles.setChipNotes}>Note: {set.notes}</Text>
+                                    )}
+                                </View>
+                                <View style={styles.setActions}>
+                                    <TouchableOpacity
+                                        style={styles.actionBtn}
+                                        onPress={() => handleEditSet(currentExId, index)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons name="create-outline" size={20} color="#3182CE" />
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={styles.actionBtn}
+                                        activeOpacity={0.7}
+                                        onPress={() => handleDeleteSet(currentExId, index)}
+                                    >
+                                        <Ionicons name="trash-outline" size={20} color="#E53E3E" />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         ))}
                     </View>
                 )}
 
-                {/* 6. Workout Completion Section */}
+                {/* Completion */}
                 <View style={styles.completionCard}>
                     <Text style={styles.completionTitle}>Workout Progress</Text>
                     <View style={styles.progressBarContainer}>
@@ -298,7 +454,6 @@ const WorkoutDetailScreen = ({ navigation }) => {
                 <View style={styles.bottomSpacer} />
             </ScrollView>
 
-            {/* 7. Sticky Bottom Action Bar */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
                     style={[styles.navButton, currentExerciseIndex === 0 && styles.navButtonDisabled]}
@@ -319,7 +474,7 @@ const WorkoutDetailScreen = ({ navigation }) => {
                 </TouchableOpacity>
             </View>
 
-            {/* 8. Demo Video Modal */}
+            {/* Demo Modal */}
             <Modal
                 visible={showDemoModal}
                 animationType="slide"
@@ -338,11 +493,9 @@ const WorkoutDetailScreen = ({ navigation }) => {
                         {selectedExercise && (
                             <>
                                 <Text style={styles.modalTitle}>{selectedExercise.name}</Text>
-
                                 <View style={styles.videoPlaceholder}>
                                     <Text style={styles.videoPlaceholderText}>📹 Video Demo Placeholder</Text>
                                 </View>
-
                                 <View style={styles.instructionsContainer}>
                                     <Text style={styles.instructionsTitle}>Instructions:</Text>
                                     {selectedExercise.instructions.map((instruction, index) => (
@@ -515,6 +668,20 @@ const styles = StyleSheet.create({
         color: '#2D3748',
         marginBottom: 16,
     },
+    loggingCardEditing: {
+        borderColor: '#3182CE',
+        borderWidth: 2,
+    },
+    loggingHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    cancelEditText: {
+        color: '#E53E3E',
+        fontWeight: '600',
+    },
     inputRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -546,6 +713,9 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         alignItems: 'center',
     },
+    logButtonEditing: {
+        backgroundColor: '#3182CE',
+    },
     logButtonText: {
         color: '#FFFFFF',
         fontSize: 16,
@@ -573,6 +743,17 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         padding: 12,
         marginBottom: 8,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    setActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    actionBtn: {
+        marginLeft: 12,
+        padding: 8, // Increased padding for better touch area
     },
     setChipText: {
         fontSize: 14,

@@ -17,6 +17,7 @@ import TrainerClientDetailsScreen from '../screens/Trainer/TrainerClientDetailsS
 import TrainerChatScreen from '../screens/Trainer/TrainerChatScreen';
 import TrainerDetails from '../screens/Trainer/TrainerDetails';
 import EditWorkoutPlanScreen from '../screens/Shared/EditWorkoutPlanScreen';
+import MemberCreateWorkoutScreen from '../screens/Member/MemberCreateWorkoutScreen';
 import MessagesScreen from '../screens/Member/MessagesScreen';
 import AdminBrandingScreen from '../screens/Admin/AdminBrandingScreen';
 import AdminUserOnboardingScreen from '../screens/Admin/AdminUserOnboardingScreen';
@@ -57,6 +58,8 @@ const AppNavigator = () => {
                 <Stack.Screen name="TrainerDetails" component={TrainerDetails} />
                 <Stack.Screen name="Messages" component={MessagesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
+                <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
+                <Stack.Screen name="WorkoutResults" component={require('../screens/Member/WorkoutResultsScreen').default} />
                 <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
                 <Stack.Screen name="AdminBranding" component={AdminBrandingScreen} />
                 <Stack.Screen name="AdminUserOnboarding" component={AdminUserOnboardingScreen} />

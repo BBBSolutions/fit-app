@@ -10,6 +10,7 @@ const getHeaders = async () => {
     }
 
     const token = await user.getIdToken();
+
     return {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -21,8 +22,6 @@ export const api = {
     authVerify: async (token) => {
         console.log("Verify Token called with:", token ? token.substring(0, 10) + "..." : "null");
         try {
-            // We pass token explicitly comfortably or derive it again if needed.
-            // The endpoint expects { "token": "..." } in body
             const response = await fetch(`${API_BASE_URL}/auth-verify`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -53,19 +52,13 @@ export const api = {
         if (!response.ok) throw new Error('Failed to fetch profile');
 
         const data = await response.json();
-
-        // Transform snake_case to camelCase for the frontend
         const toCamelCase = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-
         const transformedData = {};
         Object.keys(data).forEach(key => {
             const camelKey = toCamelCase(key);
             transformedData[camelKey] = data[key];
         });
-
-        // Specific Mapping fixes
         if (transformedData.goal) transformedData.primaryGoal = transformedData.goal;
-
         console.log("API: getProfile (Self) result:", transformedData);
         return transformedData;
     },
@@ -74,45 +67,32 @@ export const api = {
         const headers = await getHeaders();
         const auth = getAuth();
         const user = auth.currentUser;
-
         console.log("Updating Profile (Raw):", data);
-
-        // Convert camelCase keys to snake_case for Supabase
         const toSnakeCase = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-
         const dbData = {};
         Object.keys(data).forEach(key => {
-            // Handle specific overrides
             if (key === 'primaryGoal') {
                 dbData['goal'] = data[key];
             } else {
                 dbData[toSnakeCase(key)] = data[key];
             }
         });
-
-        // 1. Standardize Name: Ensure both 'name' and 'full_name' are populated
         if (dbData.name && !dbData.full_name) {
             dbData.full_name = dbData.name;
         } else if (dbData.full_name && !dbData.name) {
             dbData.name = dbData.full_name;
         }
-
-        // 2. Capture Phone Number from Auth if not provided
         if (!dbData.phone_number && user && user.phoneNumber) {
             dbData.phone_number = user.phoneNumber;
         }
-
         console.log("Updating Profile (SnakeCase):", dbData);
-
         const response = await fetch(`${API_BASE_URL}/profiles/update`, {
-            method: 'POST', // or PUT depending on implementation
+            method: 'POST',
             headers,
             body: JSON.stringify(dbData)
         });
-
         const text = await response.text();
         console.log("Update Profile Response:", text);
-
         if (!response.ok) {
             console.error("Update Profile Error Status:", response.status);
             throw new Error('Failed to update profile: ' + text);
@@ -172,20 +152,15 @@ export const api = {
         });
         if (!response.ok) throw new Error('Failed to fetch profile');
         const data = await response.json();
-
-        // Reuse transformation logic locally for now
         const toCamelCase = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
         const transformedData = {};
         Object.keys(data).forEach(key => {
             const camelKey = toCamelCase(key);
             transformedData[camelKey] = data[key];
         });
-
-        // Ensure name fallback
         if (!transformedData.name && transformedData.fullName) {
             transformedData.name = transformedData.fullName;
         }
-
         return transformedData;
     },
 
@@ -214,21 +189,6 @@ export const api = {
     // Trainer - Client Management
     getClients: async () => {
         const headers = await getHeaders();
-        // This functionality might ideally need a custom Edge Function to join tables easily,
-        // or we can just fetch from 'trainer_clients' and then fetch profiles.
-        // For simplicity/performance, let's assume we create a 'trainer/clients' function or query directly.
-        // Let's try querying the table directly via standard REST if we exposed it, but we blocked auto-exposure?
-        // Actually, we haven't exposed tables via PostgREST in this architecture explicitly, we rely on Functions often?
-        // Wait, 'profiles/get' is a function. 'workouts/list' is a function.
-        // So we should probably create a 'trainer/clients' function or similar.
-        // OR we can just use the supabase client directly in the frontend if we installed it?
-        // But we are using raw fetch here.
-        // Let's assume we use a new function `clients` similar to others.
-
-        // However, Step 1 is to just allow fetching.
-        // Let's create `clients/list` function?
-        // For now, let's call a new endpoint: `${API_BASE_URL}/clients/list`
-
         const response = await fetch(`${API_BASE_URL}/clients/list`, {
             method: 'GET',
             headers
@@ -257,8 +217,6 @@ export const api = {
     // Workout Assignments
     assignWorkout: async (trainerId, clientId, workoutId) => {
         const headers = await getHeaders();
-        // Assuming we will create a dedicated endpoint for this or reuse a generic function
-        // For MVP, we likely need a new Edge Function 'workouts/assign'
         const response = await fetch(`${API_BASE_URL}/workouts/assign`, {
             method: 'POST',
             headers,
@@ -279,10 +237,88 @@ export const api = {
     },
 
     getTrainerWorkouts: async (trainerId) => {
-        // Re-uses generic list but filters by trainer? 
-        // Actually standard list usually filters by "my workouts".
-        // If called as a trainer, getWorkouts() should return their created workouts.
         return api.getWorkouts();
+    },
+
+    deleteWorkoutAssignment: async (assignmentId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts/assignment?id=${assignmentId}`, {
+            method: 'DELETE',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to delete workout assignment');
+        return response.json();
+    },
+
+    logWorkoutSet: async (logData) => {
+        const headers = await getHeaders();
+        console.log("API: logWorkoutSet Payload:", logData);
+
+        // Pass ID here if possible, to see if backend supports upsert on POST
+        // But for now, standard POST
+        const response = await fetch(`${API_BASE_URL}/workouts/log-set`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(logData)
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            console.error("API: logWorkoutSet Failed:", text);
+            throw new Error('Failed to log set');
+        }
+        return response.json();
+    },
+
+    deleteWorkoutLog: async (logId) => {
+        console.log("API: deleteWorkoutLog called for ID:", logId);
+        const headers = await getHeaders();
+        // Updated to match backend 'log-set' endpoint
+        const response = await fetch(`${API_BASE_URL}/workouts/log-set?id=${logId}`, {
+            method: 'DELETE',
+            headers
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            console.error("API: deleteWorkoutLog Failed. Status:", response.status, "Response:", text);
+            throw new Error('Failed to delete workout log: ' + text);
+        }
+        return response.json();
+    },
+
+    getWorkoutLogs: async (assignmentId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts/logs?assignment_id=${assignmentId}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch workout logs');
+        return response.json();
+    },
+
+    createCustomWorkout: async (workoutData) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts/create-custom`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(workoutData)
+        });
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to create custom workout');
+        }
+        return response.json();
+    },
+
+    completeWorkout: async (assignmentId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts/complete`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ assignmentId })
+        });
+        if (!response.ok) throw new Error('Failed to complete workout');
+        return response.json();
     },
 
     // Messaging
@@ -304,6 +340,86 @@ export const api = {
             headers
         });
         if (!response.ok) throw new Error('Failed to fetch messages');
+        return response.json();
+    },
+
+    // Diet Logging
+    saveDietLog: async (date, dietData) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/diet/log`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ date, ...dietData })
+        });
+        if (!response.ok) throw new Error('Failed to save diet log');
+        return response.json();
+    },
+
+    getDietLog: async (date) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/diet/log?date=${date}`, {
+            method: 'GET',
+            headers
+        });
+        if (response.status === 404) {
+            return null; // No log for this day
+        }
+        if (!response.ok) throw new Error('Failed to fetch diet log');
+        return response.json();
+    },
+    // Measurement / Progress Tracking
+    getMeasurementHistory: async (type, startDate, endDate) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/measurement_logs?type_filter=${type}&start_date=${startDate}&end_date=${endDate}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch measurement history');
+        return response.json();
+    },
+
+    logMeasurement: async (date, type, value) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/measurement_logs`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ date, type, value })
+        });
+        if (!response.ok) throw new Error('Failed to log measurement');
+        return response.json();
+    },
+
+    getWorkoutStats: async (startDate, endDate) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/sessions?start_date=${startDate}&end_date=${endDate}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch workout stats');
+        return response.json();
+    },
+
+    getPersonalRecords: async () => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts/prs`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch PRs');
+        return response.json();
+    },
+
+    getExercises: async (query = '') => {
+        const headers = await getHeaders();
+        const url = query
+            ? `${API_BASE_URL}/exercises?q=${encodeURIComponent(query)}`
+            : `${API_BASE_URL}/exercises`;
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch exercises');
         return response.json();
     }
 };

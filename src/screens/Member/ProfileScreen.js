@@ -45,40 +45,84 @@ const ProfileScreen = ({ navigation }) => {
     );
 
     const handleEditProfile = () => {
-        console.log('Edit Profile');
+        // Navigate to OnboardingSurvey in 'edit' mode with current data
+        navigation.navigate('OnboardingSurvey', { isEditMode: true, existingData: userData });
     };
 
     const handleChangePassword = () => {
-        console.log('Change Password');
+        const { getAuth, sendPasswordResetEmail } = require('firebase/auth');
+        const auth = getAuth();
+        if (auth.currentUser && auth.currentUser.email) {
+            sendPasswordResetEmail(auth, auth.currentUser.email)
+                .then(() => {
+                    alert("Password reset email sent!");
+                })
+                .catch((error) => {
+                    console.error("Password Reset Error", error);
+                    alert("Error: " + error.message);
+                });
+        } else {
+            alert("No email found for user.");
+        }
+    };
+
+    // Helper to update preferences
+    const updatePreferences = async (newPrefs) => {
+        const updatedPreferences = { ...userData.preferences, ...newPrefs };
+
+        // Optimistic Update
+        setUserData(prev => ({
+            ...prev,
+            preferences: updatedPreferences
+        }));
+
+        try {
+            await api.updateProfile({ preferences: updatedPreferences });
+        } catch (error) {
+            console.error("Failed to update preferences:", error);
+            alert("Failed to save settings");
+            // Revert on failure? For now, we'll just alert.
+        }
     };
 
     const handleNotificationSettings = () => {
-        console.log('Notification Settings');
+        const currentVal = userData.preferences?.notificationsEnabled ?? true; // Default true
+        const newVal = !currentVal;
+        updatePreferences({ notificationsEnabled: newVal });
+        alert(`Notifications ${newVal ? 'Enabled' : 'Disabled'}`);
     };
 
     const handleAppTheme = () => {
-        console.log('App Theme');
+        const currentTheme = userData.preferences?.theme || 'Light';
+        const newTheme = currentTheme === 'Light' ? 'Dark' : 'Light';
+        updatePreferences({ theme: newTheme });
+        // In a real app, this would trigger a Context update
+        alert(`Theme set to ${newTheme}`);
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         const { getAuth, signOut } = require('firebase/auth');
         const auth = getAuth();
-        signOut(auth).then(() => {
-            // Reset state
-            setUserData({});
-            // Perform navigation reset using CommonActions to ensure it bubbles up to the Root Stack
+        try {
+            await signOut(auth);
+            // Ensure navigation state is reset
             navigation.dispatch(
                 CommonActions.reset({
                     index: 0,
-                    routes: [{ name: 'MemberLogin' }],
+                    routes: [{ name: 'MemberLogin' }], // Or LoginScreen if that's the root
                 })
             );
-        }).catch(e => console.error("Logout Error:", e));
+        } catch (e) {
+            console.error("Logout Error:", e);
+        }
     };
 
     const handleUpgradePlan = () => {
         console.log('Upgrade Plan');
     };
+
+    const isNotificationsEnabled = userData.preferences?.notificationsEnabled ?? true;
+    const currentTheme = userData.preferences?.theme || 'Light';
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -159,18 +203,18 @@ const ProfileScreen = ({ navigation }) => {
                         <View style={styles.divider} />
                         <TouchableOpacity style={styles.settingRow} onPress={handleNotificationSettings}>
                             <View style={styles.settingLeft}>
-                                <Ionicons name="notifications-outline" size={20} color="#4A5568" />
-                                <Text style={styles.settingText}>Notification Settings</Text>
+                                <Ionicons name={isNotificationsEnabled ? "notifications-outline" : "notifications-off-outline"} size={20} color="#4A5568" />
+                                <Text style={styles.settingText}>Notifications</Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color="#A0AEC0" />
+                            <Text style={styles.themeValue}>{isNotificationsEnabled ? 'On' : 'Off'}</Text>
                         </TouchableOpacity>
                         <View style={styles.divider} />
                         <TouchableOpacity style={styles.settingRow} onPress={handleAppTheme}>
                             <View style={styles.settingLeft}>
-                                <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
+                                <Ionicons name={currentTheme === 'Dark' ? "moon-outline" : "sunny-outline"} size={20} color="#4A5568" />
                                 <Text style={styles.settingText}>App Theme</Text>
                             </View>
-                            <Text style={styles.themeValue}>Light</Text>
+                            <Text style={styles.themeValue}>{currentTheme}</Text>
                         </TouchableOpacity>
                         <View style={styles.divider} />
                         <TouchableOpacity style={styles.settingRow} onPress={handleLogout}>

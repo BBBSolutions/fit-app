@@ -7,10 +7,12 @@ import {
     TextInput,
     TouchableOpacity,
     SafeAreaView,
+    Platform,
     Modal,
     Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
 
 const DietLoggingScreen = ({ navigation }) => {
     const [dailyCalories, setDailyCalories] = useState(1450);
@@ -43,6 +45,7 @@ const DietLoggingScreen = ({ navigation }) => {
 
     const [showMealModal, setShowMealModal] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('');
+    const [editingMealId, setEditingMealId] = useState(null);
     const [newMeal, setNewMeal] = useState({
         name: '',
         calories: '',
@@ -54,28 +57,82 @@ const DietLoggingScreen = ({ navigation }) => {
 
     const openMealModal = (category) => {
         setSelectedCategory(category);
+        setEditingMealId(null);
+        setNewMeal({ name: '', calories: '', protein: '', carbs: '', fat: '', notes: '' });
         setShowMealModal(true);
     };
 
-    const addMeal = () => {
+    const editMeal = (meal) => {
+        setSelectedCategory(meal.category);
+        setEditingMealId(meal.id);
+        setNewMeal({
+            name: meal.name,
+            calories: String(meal.calories),
+            protein: String(meal.protein),
+            carbs: String(meal.carbs),
+            fat: String(meal.fat),
+            notes: meal.notes || '',
+        });
+        setShowMealModal(true);
+    };
+
+    const saveMealEntry = () => {
         if (!newMeal.name || !newMeal.calories) {
-            Alert.alert('Error', 'Please enter food name and calories');
+            if (Platform.OS === 'web') {
+                alert('Please enter food name and calories');
+            } else {
+                Alert.alert('Error', 'Please enter food name and calories');
+            }
             return;
         }
 
-        const meal = {
-            id: Date.now(),
-            category: selectedCategory,
-            name: newMeal.name,
-            calories: parseInt(newMeal.calories) || 0,
-            protein: parseInt(newMeal.protein) || 0,
-            carbs: parseInt(newMeal.carbs) || 0,
-            fat: parseInt(newMeal.fat) || 0,
-            notes: newMeal.notes,
-        };
+        const caloriesVal = parseInt(newMeal.calories) || 0;
+        const proteinVal = parseInt(newMeal.protein) || 0;
+        const carbsVal = parseInt(newMeal.carbs) || 0;
+        const fatVal = parseInt(newMeal.fat) || 0;
 
-        setMeals([...meals, meal]);
-        setDailyCalories(dailyCalories + meal.calories);
+        if (editingMealId) {
+            // Update Existing Logic
+            const updatedMeals = meals.map(m => {
+                if (m.id === editingMealId) {
+                    return {
+                        ...m,
+                        name: newMeal.name,
+                        calories: caloriesVal,
+                        protein: proteinVal,
+                        carbs: carbsVal,
+                        fat: fatVal,
+                        notes: newMeal.notes
+                    };
+                }
+                return m;
+            });
+
+            // Calculate diff for calories
+            const oldMeal = meals.find(m => m.id === editingMealId);
+            const oldCals = oldMeal ? oldMeal.calories : 0;
+            const diff = caloriesVal - oldCals;
+
+            setMeals(updatedMeals);
+            setDailyCalories(dailyCalories + diff);
+
+        } else {
+            // Add New Logic
+            const meal = {
+                id: Date.now(),
+                category: selectedCategory,
+                name: newMeal.name,
+                calories: caloriesVal,
+                protein: proteinVal,
+                carbs: carbsVal,
+                fat: fatVal,
+                notes: newMeal.notes,
+            };
+
+            setMeals([...meals, meal]);
+            setDailyCalories(dailyCalories + meal.calories);
+        }
+
         setShowMealModal(false);
         setNewMeal({
             name: '',
@@ -85,21 +142,31 @@ const DietLoggingScreen = ({ navigation }) => {
             fat: '',
             notes: '',
         });
+        setEditingMealId(null);
     };
 
     const deleteMeal = (id) => {
         const meal = meals.find((m) => m.id === id);
-        Alert.alert('Delete Meal', 'Are you sure you want to delete this meal?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: () => {
-                    setMeals(meals.filter((m) => m.id !== id));
-                    setDailyCalories(dailyCalories - meal.calories);
+
+        const performDelete = () => {
+            setMeals(meals.filter((m) => m.id !== id));
+            setDailyCalories(dailyCalories - meal.calories);
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm('Are you sure you want to delete this meal?')) {
+                performDelete();
+            }
+        } else {
+            Alert.alert('Delete Meal', 'Are you sure you want to delete this meal?', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: performDelete,
                 },
-            },
-        ]);
+            ]);
+        }
     };
 
     const adjustWater = (amount) => {
@@ -107,9 +174,95 @@ const DietLoggingScreen = ({ navigation }) => {
         setWaterIntake(newAmount);
     };
 
-    const handleSave = () => {
-        Alert.alert('Success', 'Daily log saved successfully!');
-        navigation.goBack();
+    const [initialData, setInitialData] = useState(null);
+
+    // Backend Integration
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const loadDietData = async () => {
+        try {
+            const log = await api.getDietLog(todayStr);
+            if (log) {
+                const loadedMeals = log.meals || [];
+                const loadedWater = log.water_intake || 0;
+                const loadedCalories = log.daily_calories || 0;
+
+                // Update current state
+                setMeals(loadedMeals);
+                setWaterIntake(loadedWater);
+                setDailyCalories(loadedCalories);
+
+                // Update initial state for dirty checking
+                setInitialData({
+                    meals: JSON.stringify(loadedMeals),
+                    water: loadedWater,
+                    calories: loadedCalories
+                });
+            } else {
+                // No log found, set initial empty state
+                setInitialData({
+                    meals: JSON.stringify([]),
+                    water: 0,
+                    calories: 0
+                });
+                // Reset current state to defaults or 0 if preferred
+                // For now, keeping default static data or clearing it?
+                // The user's code had static default meals. We should probably clear them if real data is expected.
+                // However, preserving existing behavior for now, just syncing initialData to current defaults if API returns null.
+                setInitialData({
+                    meals: JSON.stringify(meals),
+                    water: waterIntake,
+                    calories: dailyCalories
+                });
+            }
+        } catch (error) {
+            console.error("Error loading diet log:", error);
+            // On error, assume no changes to avoid stuck button
+            setInitialData({
+                meals: JSON.stringify(meals),
+                water: waterIntake,
+                calories: dailyCalories
+            });
+        }
+    };
+
+    React.useEffect(() => {
+        loadDietData();
+    }, []);
+
+    const hasUnsavedChanges = () => {
+        if (!initialData) return false;
+        const currentMealsStr = JSON.stringify(meals);
+        const hasMealsChanged = currentMealsStr !== initialData.meals;
+        const hasWaterChanged = waterIntake !== initialData.water;
+        return hasMealsChanged || hasWaterChanged;
+    };
+
+    const handleSave = async () => {
+        try {
+            await api.saveDietLog(todayStr, {
+                daily_calories: dailyCalories,
+                water_intake: waterIntake,
+                meals: meals
+            });
+
+            // Update initial data to match saved data using functional update or re-fetching?
+            // Simply setting specific values is cleaner than re-fetching
+            setInitialData({
+                meals: JSON.stringify(meals),
+                water: waterIntake,
+                calories: dailyCalories
+            });
+
+            Alert.alert('Success', 'Daily log saved successfully!');
+            // Optional: navigation.goBack(); -> User requested "only come when there is new diet log", so maybe stay? 
+            // Usually "Save" implies staying or going back. I'll keep goBack() or remove it based on preference.
+            // User said "save daily log botton is always there , it will only come when there is new diet log"
+            // So if I save, the button should disappear. I will REMOVE goBack() to verify the button disappears.
+        } catch (error) {
+            console.error("Error saving diet log:", error);
+            Alert.alert('Error', 'Failed to save log. Please try again.');
+        }
     };
 
     const getMealsByCategory = (category) => {
@@ -225,7 +378,10 @@ const DietLoggingScreen = ({ navigation }) => {
                                             )}
                                         </View>
                                         <View style={styles.mealActions}>
-                                            <TouchableOpacity style={styles.actionButton}>
+                                            <TouchableOpacity
+                                                style={styles.actionButton}
+                                                onPress={() => editMeal(meal)}
+                                            >
                                                 <Ionicons name="create-outline" size={20} color="#3182CE" />
                                             </TouchableOpacity>
                                             <TouchableOpacity
@@ -281,12 +437,16 @@ const DietLoggingScreen = ({ navigation }) => {
                 <View style={styles.bottomSpacer} />
             </ScrollView>
 
-            {/* 7. Save Button */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                    <Text style={styles.saveButtonText}>Save Daily Log</Text>
-                </TouchableOpacity>
-            </View>
+            {/* 7. Save Button - Only visible if changes detected */}
+            {
+                hasUnsavedChanges() && (
+                    <View style={styles.bottomBar}>
+                        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                            <Text style={styles.saveButtonText}>Save Daily Log</Text>
+                        </TouchableOpacity>
+                    </View>
+                )
+            }
 
             {/* 4. Meal Entry Modal */}
             <Modal
@@ -298,7 +458,9 @@ const DietLoggingScreen = ({ navigation }) => {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Add {selectedCategory}</Text>
+                            <Text style={styles.modalTitle}>
+                                {editingMealId ? 'Edit Meal' : `Add ${selectedCategory}`}
+                            </Text>
                             <TouchableOpacity onPress={() => setShowMealModal(false)}>
                                 <Ionicons name="close" size={24} color="#2D3748" />
                             </TouchableOpacity>
@@ -364,8 +526,10 @@ const DietLoggingScreen = ({ navigation }) => {
                                 onChangeText={(text) => setNewMeal({ ...newMeal, notes: text })}
                             />
 
-                            <TouchableOpacity style={styles.addButton} onPress={addMeal}>
-                                <Text style={styles.addButtonText}>Add Meal</Text>
+                            <TouchableOpacity style={styles.addButton} onPress={saveMealEntry}>
+                                <Text style={styles.addButtonText}>
+                                    {editingMealId ? 'Update Meal' : 'Add Meal'}
+                                </Text>
                             </TouchableOpacity>
                         </ScrollView>
                     </View>

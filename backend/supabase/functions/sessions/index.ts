@@ -58,9 +58,30 @@ serve(async (req) => {
 
             if (error) throw error;
             return new Response(JSON.stringify(session), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            if (error) throw error;
+            return new Response(JSON.stringify(session), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
-        // POST /sessions/finish
+        // GET /sessions (History)
+        if (req.method === 'GET') {
+            const startDate = url.searchParams.get('start_date');
+            const endDate = url.searchParams.get('end_date');
+
+            let query = supabaseClient
+                .from('sessions')
+                .select('id,started_at,completed_at,metrics')
+                .eq('user_id', userId)
+                .eq('status', 'completed')
+                .order('started_at', { ascending: false });
+
+            if (startDate) query = query.gte('started_at', startDate);
+            if (endDate) query = query.lte('started_at', endDate);
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         // We expect body to contain session_id if simpler, or use URL param /sessions/:id/finish
         if (action === 'finish' && req.method === 'POST') {
             const { session_id, logs, metrics } = await req.json();

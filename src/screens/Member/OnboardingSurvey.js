@@ -11,30 +11,33 @@ import {
 } from 'react-native';
 import { api } from '../../services/api';
 
-const OnboardingSurvey = ({ navigation }) => {
+const OnboardingSurvey = ({ navigation, route }) => {
+    const { isEditMode, existingData } = route.params || {};
+    const [isLoading, setIsLoading] = useState(false);
+
     const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        age: '',
-        gender: '',
-        height: '',
-        weight: '',
-        fitnessLevel: '',
-        experienceDuration: '',
-        goal: '',
-        waist: '',
-        hip: '',
-        chest: '',
-        arms: '',
-        thighs: '',
-        activityLevel: '',
-        workoutDays: '',
-        injuries: '',
-        medicalConditions: '',
-        workoutLocation: '',
-        trainingStyle: '',
-        exercisesToAvoid: '',
-        planType: '',
+        name: existingData?.name || '',
+        email: existingData?.email || '',
+        age: existingData?.age ? String(existingData.age) : '',
+        gender: existingData?.gender || '',
+        height: existingData?.height ? String(existingData.height) : '',
+        weight: existingData?.weight ? String(existingData.weight) : '',
+        fitnessLevel: existingData?.fitnessLevel || '',
+        experienceDuration: existingData?.experienceDuration || '',
+        goal: existingData?.primaryGoal || existingData?.goal || '',
+        waist: existingData?.waist ? String(existingData.waist) : '',
+        hip: existingData?.hip ? String(existingData.hip) : '',
+        chest: existingData?.chest ? String(existingData.chest) : '',
+        arms: existingData?.arms ? String(existingData.arms) : '',
+        thighs: existingData?.thighs ? String(existingData.thighs) : '',
+        activityLevel: existingData?.activityLevel || '',
+        workoutDays: existingData?.workoutDays ? String(existingData.workoutDays) : '',
+        injuries: existingData?.injuries || '',
+        medicalConditions: existingData?.medicalConditions || '',
+        workoutLocation: existingData?.workoutLocation || '',
+        trainingStyle: existingData?.trainingStyle || '',
+        exercisesToAvoid: existingData?.exercisesToAvoid || '',
+        planType: existingData?.planType || '',
     });
 
     const updateField = (field, value) => {
@@ -48,15 +51,24 @@ const OnboardingSurvey = ({ navigation }) => {
             return;
         }
 
+        setIsLoading(true);
+
         // Backend Integration
         api.updateProfile(formData)
             .then(() => {
-                Alert.alert("Success", "Profile setup complete!");
-                navigation.navigate('MainApp');
+                Alert.alert("Success", isEditMode ? "Profile updated!" : "Profile setup complete!");
+                if (isEditMode) {
+                    navigation.goBack();
+                } else {
+                    navigation.navigate('MainApp');
+                }
             })
             .catch(err => {
                 console.error("Profile Save Error:", err);
                 Alert.alert("Error", "Could not save profile. Please try again.");
+            })
+            .finally(() => {
+                setIsLoading(false);
             });
     };
 
