@@ -50,9 +50,29 @@ const ProgressScreen = () => {
         setLoading(true);
         try {
             // 1. Profile
+            // 1. Profile
             const profile = await api.getProfile();
-            setMemberDetails(profile);
-            setEditedDetails(profile);
+
+            // Normalize: Move legacy top-level fields into body_measurements
+            // This ensures the Edit Modal has a complete object to work with,
+            // preventing data loss when only one field is edited.
+            const normalizedMeasurements = {
+                ...(profile.body_measurements || {}),
+                waist: profile.body_measurements?.waist || profile.waist,
+                hips: profile.body_measurements?.hips || profile.body_measurements?.hip || profile.hip,
+                chest: profile.body_measurements?.chest || profile.chest,
+                arms: profile.body_measurements?.arms || profile.arms,
+                thighs: profile.body_measurements?.thighs || profile.thighs,
+            };
+
+            const normalizedProfile = {
+                ...profile,
+                body_measurements: normalizedMeasurements
+            };
+
+            setMemberDetails(normalizedProfile);
+            setEditedDetails(normalizedProfile); // Now 'editedDetails' has the full picture
+
             if (profile.weight) {
                 setCurrentWeight(parseFloat(profile.weight));
                 setNewWeight(profile.weight);
@@ -72,7 +92,7 @@ const ProgressScreen = () => {
                 const formatted = weights.map(w => ({
                     value: parseFloat(w.value),
                     date: w.date, // 'YYYY-MM-DD'
-                    label: new Date(w.date).getDate().toString() // Simple day label
+                    label: `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][new Date(w.date).getMonth()]} ${new Date(w.date).getDate()}`
                 }));
                 setWeightHistory(formatted);
 
@@ -88,15 +108,19 @@ const ProgressScreen = () => {
             // 3. Workout Stats (This Week)
             try {
                 const today = new Date();
-                const firstDayOfWeek = new Date(today);
-                firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
-                const endOfWeek = new Date(today);
-                endOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
+                const day = today.getDay(); // 0 (Sun) - 6 (Sat)
+                const diff = day === 0 ? 6 : day - 1; // Adjust so Monday is 0, Sunday is 6
 
-                const weekStart = firstDayOfWeek.toISOString().split('T')[0];
+                const firstDayOfWeek = new Date(today);
+                firstDayOfWeek.setDate(today.getDate() - diff); // Monday
+
+                const endOfWeek = new Date(firstDayOfWeek);
+                endOfWeek.setDate(firstDayOfWeek.getDate() + 6); // Sunday
 
                 // Set end of week to end of the day to ensure we catch today's workouts
                 endOfWeek.setHours(23, 59, 59, 999);
+
+                const weekStart = firstDayOfWeek.toISOString().split('T')[0];
                 const weekEnd = endOfWeek.toISOString(); // Send full ISO string to capture time
 
                 const sessions = await api.getWorkoutStats(weekStart, weekEnd);
@@ -166,8 +190,28 @@ const ProgressScreen = () => {
 
     const handleSaveDetails = async () => {
         try {
-            // Update Profile
-            const profileToUpdate = { ...editedDetails, weight: newWeight };
+            // Extract latest measurements from the nested object
+            const measurements = editedDetails.body_measurements || {};
+
+            // Update Profile: Sync both JSONB and top-level columns to ensure persistence
+            // and overwrite any legacy "stuck" values.
+            const profileToUpdate = {
+                ...editedDetails,
+                weight: newWeight,
+                // Top-level overrides (match OnboardingSurvey schema where possible)
+                waist: measurements.waist || null,
+                hip: measurements.hips || measurements.hip || null, // Onboarding uses 'hip'
+                chest: measurements.chest || null,
+                arms: measurements.arms || null,
+                thighs: measurements.thighs || null,
+
+                // Ensure JSONB is also fully updated
+                body_measurements: {
+                    ...measurements,
+                    hip: measurements.hips || measurements.hip // Standardize in JSON too
+                }
+            };
+
             await api.updateProfile(profileToUpdate);
 
             // Log Weight if changed
@@ -322,7 +366,23 @@ const ProgressScreen = () => {
                         </View>
                         <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Waist</Text>
-                            <Text style={styles.detailValue}>{memberDetails.waist || '-'} "</Text>
+                            <Text style={styles.detailValue}>{memberDetails.body_measurements?.waist || memberDetails.waist || '-'} cm</Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Hips</Text>
+                            <Text style={styles.detailValue}>{memberDetails.body_measurements?.hips || memberDetails.body_measurements?.hip || memberDetails.hip || '-'} cm</Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Chest</Text>
+                            <Text style={styles.detailValue}>{memberDetails.body_measurements?.chest || memberDetails.chest || '-'} cm</Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Arms</Text>
+                            <Text style={styles.detailValue}>{memberDetails.body_measurements?.arms || memberDetails.arms || '-'} cm</Text>
+                        </View>
+                        <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Thighs</Text>
+                            <Text style={styles.detailValue}>{memberDetails.body_measurements?.thighs || memberDetails.thighs || '-'} cm</Text>
                         </View>
                     </View>
                 </View>
@@ -340,21 +400,84 @@ const ProgressScreen = () => {
                             </TouchableOpacity>
                         </View>
 
-                        <Text style={styles.label}>Weight (kg)</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={newWeight ? String(newWeight) : ''}
-                            onChangeText={setNewWeight}
-                            keyboardType="numeric"
-                        />
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            <Text style={styles.label}>Weight (kg)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={newWeight ? String(newWeight) : ''}
+                                onChangeText={setNewWeight}
+                                keyboardType="numeric"
+                            />
 
-                        <Text style={styles.label}>Waist (inches)</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={editedDetails.waist}
-                            onChangeText={t => setEditedDetails({ ...editedDetails, waist: t })}
-                            keyboardType="numeric"
-                        />
+                            <View style={styles.row}>
+                                <View style={styles.halfInput}>
+                                    <Text style={styles.label}>Waist (cm)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={editedDetails.body_measurements?.waist || ''}
+                                        onChangeText={t => setEditedDetails({
+                                            ...editedDetails,
+                                            body_measurements: { ...editedDetails.body_measurements, waist: t }
+                                        })}
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                                <View style={styles.halfInput}>
+                                    <Text style={styles.label}>Hips (cm)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={editedDetails.body_measurements?.hips || ''}
+                                        onChangeText={t => setEditedDetails({
+                                            ...editedDetails,
+                                            body_measurements: { ...editedDetails.body_measurements, hips: t }
+                                        })}
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.row}>
+                                <View style={styles.halfInput}>
+                                    <Text style={styles.label}>Chest (cm)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={editedDetails.body_measurements?.chest || ''}
+                                        onChangeText={t => setEditedDetails({
+                                            ...editedDetails,
+                                            body_measurements: { ...editedDetails.body_measurements, chest: t }
+                                        })}
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                                <View style={styles.halfInput}>
+                                    <Text style={styles.label}>Arms (cm)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={editedDetails.body_measurements?.arms || ''}
+                                        onChangeText={t => setEditedDetails({
+                                            ...editedDetails,
+                                            body_measurements: { ...editedDetails.body_measurements, arms: t }
+                                        })}
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.row}>
+                                <View style={styles.halfInput}>
+                                    <Text style={styles.label}>Thighs (cm)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={editedDetails.body_measurements?.thighs || ''}
+                                        onChangeText={t => setEditedDetails({
+                                            ...editedDetails,
+                                            body_measurements: { ...editedDetails.body_measurements, thighs: t }
+                                        })}
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                            </View>
+                        </ScrollView>
 
                         <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
                             <Text style={styles.saveButtonText}>Save & Log</Text>
@@ -441,6 +564,14 @@ const styles = StyleSheet.create({
         backgroundColor: '#F7FAFC',
         borderRadius: 12,
         alignItems: 'center',
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 10
+    },
+    halfInput: {
+        width: '48%'
     }
 });
 

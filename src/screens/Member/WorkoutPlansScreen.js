@@ -21,7 +21,7 @@ const MONTHS = [
 
 
 
-const WorkoutPlansScreen = ({ navigation }) => {
+const WorkoutPlansScreen = ({ navigation, route }) => {
     const [userProfile, setUserProfile] = useState(null);
     const [signupDate, setSignupDate] = useState(null);
 
@@ -35,12 +35,22 @@ const WorkoutPlansScreen = ({ navigation }) => {
     const [currentTrainerId, setCurrentTrainerId] = useState(null);
     const [loading, setLoading] = useState(false);
 
+    // Tab State
+    const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'completed'
+
     // Summary Data
     const [planSummary, setPlanSummary] = useState({
         totalWorkouts: 0,
         totalMinutes: 0,
         trainerNotes: '',
     });
+
+    // Initialize from params
+    useEffect(() => {
+        if (route.params?.tab) {
+            setActiveTab(route.params.tab);
+        }
+    }, [route.params]);
 
     // 1. Fetch Profile for Signup Date
     useEffect(() => {
@@ -50,7 +60,7 @@ const WorkoutPlansScreen = ({ navigation }) => {
                 setUserProfile(profile);
                 // Fallback to Jan 1st of current year if no created_at, just for safety
                 // In real app, created_at should exist.
-                const created = profile.created_at ? new Date(profile.created_at) : new Date();
+                const created = (profile.createdAt || profile.created_at) ? new Date(profile.createdAt || profile.created_at) : new Date();
                 setSignupDate(created);
 
                 // Set initial view to today, but respect bounds? 
@@ -201,8 +211,17 @@ const WorkoutPlansScreen = ({ navigation }) => {
         if (!selectedWeek || !allAssignments) return [];
 
         return allAssignments.filter(a => {
-            const d = a.date; // already Date object
-            return d >= selectedWeek.start && d <= selectedWeek.end;
+            const d = a.date;
+            const matchesWeek = d >= selectedWeek.start && d <= selectedWeek.end;
+
+            const isCompleted = a.status === 'completed';
+
+            if (activeTab === 'completed') {
+                return matchesWeek && isCompleted;
+            } else {
+                // Pending = not completed
+                return matchesWeek && !isCompleted;
+            }
         }).map(a => ({
             id: a.workout?.id,
             assignmentId: a.id,
@@ -212,7 +231,7 @@ const WorkoutPlansScreen = ({ navigation }) => {
             exercises: a.workout?.exercises || [],
             status: a.status
         }));
-    }, [allAssignments, selectedWeek]);
+    }, [allAssignments, selectedWeek, activeTab]);
 
 
     // Update summary
@@ -393,6 +412,22 @@ const WorkoutPlansScreen = ({ navigation }) => {
                             <Text style={styles.noWeeksText}>No weeks available just yet.</Text>
                         )}
                     </ScrollView>
+                </View>
+
+                {/* Status Tabs (Segmented Control) */}
+                <View style={styles.tabContainer}>
+                    <TouchableOpacity
+                        style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive]}
+                        onPress={() => setActiveTab('pending')}
+                    >
+                        <Text style={[styles.tabText, activeTab === 'pending' && styles.tabTextActive]}>Pending</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tabButton, activeTab === 'completed' && styles.tabButtonActive]}
+                        onPress={() => setActiveTab('completed')}
+                    >
+                        <Text style={[styles.tabText, activeTab === 'completed' && styles.tabTextActive]}>Completed</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Workouts List */}
@@ -802,6 +837,39 @@ const styles = StyleSheet.create({
         elevation: 4,
     },
     bottomSpacer: { height: 100 },
+
+    // Tab Styles
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#EDF2F7',
+        borderRadius: 20,
+        padding: 4,
+        marginHorizontal: 20,
+        marginBottom: 16,
+    },
+    tabButton: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 16,
+    },
+    tabButtonActive: {
+        backgroundColor: '#FFFFFF',
+        shadowColor: 'rgba(0,0,0,0.05)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    tabText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#A0AEC0',
+    },
+    tabTextActive: {
+        color: '#2D3748',
+        fontWeight: '700',
+    }
 });
 
 export default WorkoutPlansScreen;

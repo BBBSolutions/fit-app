@@ -296,6 +296,44 @@ export const api = {
         return response.json();
     },
 
+    getExerciseHistory: async (exerciseId, assignmentId, exerciseName) => {
+        const headers = await getHeaders();
+        let url = `${API_BASE_URL}/workouts/history?`;
+
+        // Build Params
+        const params = new URLSearchParams();
+        if (exerciseId && exerciseId.length > 5) params.append('exercise_id', exerciseId);
+        if (exerciseName) params.append('exercise_name', exerciseName);
+        if (assignmentId) params.append('exclude_assignment_id', assignmentId);
+
+        url += params.toString();
+
+        console.log("[API] getExerciseHistory calling URL:", url);
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("getExerciseHistory failed. Status:", response.status, "Error:", errText);
+            throw new Error('Failed to fetch exercise history: ' + errText);
+        }
+        return response.json();
+    },
+
+    updateWorkout: async (workoutId, data) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/workouts?id=${workoutId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error('Failed to update workout');
+        return response.json();
+    },
+
     createCustomWorkout: async (workoutData) => {
         const headers = await getHeaders();
         const response = await fetch(`${API_BASE_URL}/workouts/create-custom`, {

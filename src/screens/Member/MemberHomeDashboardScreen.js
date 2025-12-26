@@ -13,35 +13,137 @@ import { useFocusEffect } from '@react-navigation/native';
 
 const MemberHomeDashboardScreen = ({ navigation }) => {
     const [userName, setUserName] = useState('');
+    const [stats, setStats] = useState({
+        streak: 0,
+        calories: 0,
+        sessions: 0,
+        loading: true
+    });
     const [todaysWorkout, setTodaysWorkout] = useState(null);
 
-    useFocusEffect( // Keep this focus effect to refresh data when returning
+
+    useFocusEffect(
         React.useCallback(() => {
             api.getProfile().then(data => {
                 const name = data?.name || data?.first_name || 'Member';
                 setUserName(name);
             }).catch(err => console.error("Home load error:", err));
 
+            // Fetch Assignments
             api.getAssignedWorkouts('').then(data => {
                 if (data && data.length > 0) {
-                    // Simple logic: just pick the first one for now, or match date if available
-                    setTodaysWorkout(data[0].workout);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    const todaysAssignment = data.find(assignment => {
+                        const date = new Date(assignment.scheduled_date || assignment.created_at || Date.now());
+                        date.setHours(0, 0, 0, 0);
+                        return date.getTime() === today.getTime();
+                    });
+
+                    setTodaysWorkout(todaysAssignment ? {
+                        ...todaysAssignment.workout,
+                        status: todaysAssignment.status,
+                        assignmentId: todaysAssignment.id
+                    } : null);
                 } else {
                     setTodaysWorkout(null);
                 }
             }).catch(err => console.error("Home workout load error:", err));
+
+            // Fetch Stats (Last 365 days)
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 365);
+
+            api.getWorkoutStats(startDate.toISOString(), endDate.toISOString())
+                .then(sessions => {
+                    let totalCalories = 0;
+                    let currentStreak = 0;
+
+                    if (sessions && Array.isArray(sessions)) {
+                        // 1. Total Sessions
+                        const totalSessions = sessions.length;
+
+                        // 2. Calories
+                        totalCalories = sessions.reduce((acc, session) => {
+                            const cals = session.metrics?.caloriesBurned || session.metrics?.calories || 0;
+                            return acc + cals;
+                        }, 0);
+
+                        // 3. Streak Calculation
+                        // Sort by date descending
+                        const sortedSessions = sessions
+                            .map(s => new Date(s.started_at || s.created_at))
+                            .sort((a, b) => b - a);
+
+                        if (sortedSessions.length > 0) {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+
+                            const uniqueDates = [];
+                            sortedSessions.forEach(d => {
+                                d.setHours(0, 0, 0, 0);
+                                const t = d.getTime();
+                                if (!uniqueDates.includes(t)) uniqueDates.push(t);
+                            });
+
+                            // Check if latest is today or yesterday to start streak
+                            const latest = uniqueDates[0];
+                            const yesterday = new Date(today);
+                            yesterday.setDate(yesterday.getDate() - 1);
+
+                            if (latest === today.getTime() || latest === yesterday.getTime()) {
+                                currentStreak = 1;
+                                let previousDate = new Date(latest);
+
+                                for (let i = 1; i < uniqueDates.length; i++) {
+                                    const date = new Date(uniqueDates[i]);
+                                    const expectedPrev = new Date(previousDate);
+                                    expectedPrev.setDate(expectedPrev.getDate() - 1);
+
+                                    if (date.getTime() === expectedPrev.getTime()) {
+                                        currentStreak++;
+                                        previousDate = date;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            } else {
+                                currentStreak = 0;
+                            }
+                        }
+
+                        setStats({
+                            streak: currentStreak,
+                            calories: totalCalories,
+                            sessions: totalSessions,
+                            loading: false
+                        });
+                    } else {
+                        setStats({ streak: 0, calories: 0, sessions: 0, loading: false });
+                    }
+                })
+                .catch(err => {
+                    console.error("Failed to fetch stats:", err);
+                    setStats(prev => ({ ...prev, loading: false }));
+                });
 
         }, [])
     );
 
     const handleStartWorkout = () => {
         if (todaysWorkout) {
-            // If trainer assigned workout exists, go to plans list to see details/start
-            // Or directly to detail? User asked: "shows trainer assigned plan and then start workout"
-            // Let's go to the Plan List (WorkoutPlansScreen) as the "Plan" page
-            navigation.navigate('Workouts');
+            if (todaysWorkout.status === 'completed') {
+                // User wants "startworkout navigates to not completed workouts section"
+                // Assuming this means the list of other available workouts.
+                // The previous logic was 'MemberCreateWorkout'. 
+                // "startworkout navigates to not completed workouts section"
+                navigation.navigate('Workouts', { tab: 'pending' });
+            } else {
+                navigation.navigate('Workouts', { tab: 'pending' }); // Or specific detail?
+            }
         } else {
-            // Else go to Create Custom Workout
             navigation.navigate('MemberCreateWorkout');
         }
     };
@@ -67,8 +169,15 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                     {todaysWorkout ? (
                         <View style={styles.workoutCard}>
                             <View style={styles.workoutHeader}>
-                                <Text style={styles.workoutTitle}>{todaysWorkout.title || "Workout"}</Text>
-                                <Text style={styles.workoutDuration}>⏱ {todaysWorkout.duration || "N/A"}</Text>
+                                <View>
+                                    <Text style={styles.workoutTitle}>{todaysWorkout.title || "Workout"}</Text>
+                                    <Text style={styles.workoutDuration}>⏱ {todaysWorkout.duration || "N/A"}</Text>
+                                </View>
+                                {todaysWorkout.status === 'completed' && (
+                                    <View style={{ backgroundColor: '#C6F6D5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                                        <Text style={{ color: '#2F855A', fontWeight: 'bold', fontSize: 12 }}>Completed</Text>
+                                    </View>
+                                )}
                             </View>
 
                             <View style={styles.exerciseList}>
@@ -87,18 +196,25 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                                 style={styles.startButton}
                                 onPress={handleStartWorkout}
                             >
-                                <Text style={styles.startButtonText}>Start Workout</Text>
+                                <Text style={styles.startButtonText}>
+                                    {todaysWorkout.status === 'completed' ? 'Start New Workout' : 'Start Workout'}
+                                </Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity style={styles.viewPlanLink} onPress={() => navigation.navigate('Workouts')}>
+                            <TouchableOpacity
+                                style={styles.viewPlanLink}
+                                onPress={() => navigation.navigate('Workouts', {
+                                    tab: todaysWorkout.status === 'completed' ? 'completed' : 'pending'
+                                })}
+                            >
                                 <Text style={styles.viewPlanText}>View Full Plan</Text>
                             </TouchableOpacity>
                         </View>
                     ) : (
                         <View style={styles.workoutCard}>
                             <Text style={{ color: '#718096', marginBottom: 10 }}>No workout assigned for today.</Text>
-                            <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout}>
-                                <Text style={styles.startButtonText}>Plan Your Workout</Text>
+                            <TouchableOpacity style={styles.startButton} onPress={() => navigation.navigate('MemberCreateWorkout')}>
+                                <Text style={styles.startButtonText}>Start New Workout</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -109,29 +225,21 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                     <Text style={styles.sectionTitle}>Your Progress</Text>
                     <View style={styles.progressRow}>
                         <View style={styles.progressCard}>
-                            <Text style={styles.progressValue}>🔥 5</Text>
+                            <Text style={styles.progressValue}>🔥 {stats.streak}</Text>
                             <Text style={styles.progressLabel}>Day Streak</Text>
                         </View>
                         <View style={styles.progressCard}>
-                            <Text style={styles.progressValue}>⚡ 2,150</Text>
+                            <Text style={styles.progressValue}>⚡ {stats.calories.toLocaleString()}</Text>
                             <Text style={styles.progressLabel}>Kcal Burned</Text>
                         </View>
                         <View style={styles.progressCard}>
-                            <Text style={styles.progressValue}>🏋️ 12</Text>
+                            <Text style={styles.progressValue}>🏋️ {stats.sessions}</Text>
                             <Text style={styles.progressLabel}>Sessions</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* 4. Weight Trend Graph */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Weight Progress</Text>
-                    <View style={styles.graphCard}>
-                        <View style={styles.graphPlaceholder}>
-                            <Text style={styles.graphPlaceholderText}>Weight Trend Graph Placeholder</Text>
-                        </View>
-                    </View>
-                </View>
+
 
                 {/* 5. Quick Actions */}
                 <View style={styles.section}>

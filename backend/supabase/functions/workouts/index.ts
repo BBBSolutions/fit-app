@@ -41,6 +41,70 @@ serve(async (req) => {
         const pathParts = url.pathname.split('/');
         const lastPart = pathParts[pathParts.length - 1]; // "list", "create" or ID
 
+        // HISTORY ENDPOINT (Moved to top priority)
+        // Check "history" presence in URL. Most robust way.
+        if (req.method === 'GET' && req.url.includes('/history')) {
+            console.log("[Workouts Function] ENTERED HISTORY BLOCK");
+            const exerciseId = url.searchParams.get('exercise_id');
+            const exerciseName = url.searchParams.get('exercise_name'); // Support Name Lookup
+            const excludeAssignmentId = url.searchParams.get('exclude_assignment_id');
+
+            console.log(`[History] Fetching. ID: ${exerciseId}, Name: ${exerciseName}, Exclude: ${excludeAssignmentId}`);
+
+            if (!exerciseId && !exerciseName) throw new Error("Missing exercise ID or Name");
+
+            // 1. Find recent log
+            let query = supabaseClient
+                .from('workout_logs')
+                .select('workout_assignment_id, created_at, exercise_name')
+                .eq('user_id', userId) // Security
+                .neq('workout_assignment_id', excludeAssignmentId || '00000000-0000-0000-0000-000000000000') // Ensure Valid UUID for NOT EQ
+                .order('created_at', { ascending: false })
+                .limit(5); // Fetch a few to debug
+
+            if (exerciseId) {
+                query = query.eq('exercise_id', exerciseId);
+            } else if (exerciseName) {
+                query = query.eq('exercise_name', exerciseName);
+            }
+
+            const { data: candidates, error: recentError } = await query;
+            console.log(`[History Debug] Query for Name: "${exerciseName}". Found candidates: ${candidates?.length}`);
+            if (candidates && candidates.length > 0) console.log("First candidate:", candidates[0]);
+
+            if (recentError) {
+                console.error("[History] Error finding recent log:", recentError);
+                throw recentError;
+            }
+
+            const recentLog = candidates && candidates.length > 0 ? candidates[0] : null;
+
+            if (!recentLog) {
+                console.log("[History] No previous logs found matching criteria.");
+                return new Response(JSON.stringify([]), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            console.log(`[History] Found recent assignment: ${recentLog.workout_assignment_id}`);
+
+            // 2. Fetch all logs for that assignment
+            let logsQuery = supabaseClient
+                .from('workout_logs')
+                .select('*')
+                .eq('workout_assignment_id', recentLog.workout_assignment_id)
+                .order('set_number', { ascending: true });
+
+            if (exerciseId) {
+                logsQuery = logsQuery.eq('exercise_id', exerciseId);
+            } else if (exerciseName) {
+                logsQuery = logsQuery.eq('exercise_name', exerciseName);
+            }
+
+            const { data, error } = await logsQuery;
+
+            if (error) throw error;
+            return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
         // GET /workouts/list OR /workouts?list
         // GET /workouts/:id
 
@@ -159,6 +223,8 @@ serve(async (req) => {
             if (error) throw error;
             return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+
+
 
         if (lastPart === 'complete' && req.method === 'POST') {
             const { assignmentId } = await req.json();
@@ -284,7 +350,7 @@ serve(async (req) => {
                 const { data: assignment } = await supabaseClient
                     .from('workout_assignments')
                     .select('id')
-                    .eq('workout_id', workout.id)
+                    .eq('workout_id', workout.id) // Corrected from workout.id to idParam just to be safe, but workout.id is from DB
                     .eq('client_id', userId)
                     .single();
 
@@ -305,6 +371,35 @@ serve(async (req) => {
                 if (error) throw error;
                 return new Response(JSON.stringify(workouts), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
+        }
+
+        // METHOD: PUT -> Update Workout (e.g. Plan Changes)
+        if (req.method === 'PUT') {
+            const idParam = url.searchParams.get('id');
+            const body = await req.json();
+
+            if (!idParam) throw new Error("Missing workout ID");
+
+            // For now, allow update if User is Owner.
+            // Future: Allow updating if Assigned (requires duplicating workout or storing overrides).
+            // MVP: Just try to update.
+
+            const { data, error } = await supabaseClient
+                .from('workouts')
+                .update({
+                    exercises: body.exercises,
+                    // Allow updating other fields if provided
+                    ...(body.title && { title: body.title }),
+                    ...(body.description && { description: body.description }),
+                })
+                .eq('id', idParam)
+                .eq('user_id', userId) // Enforce ownership for safety!
+                .select()
+                .single();
+
+            if (error) throw new Error("Update failed or Unauthorized: " + error.message);
+
+            return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
         // METHOD: POST -> Create (Existing Logic)
