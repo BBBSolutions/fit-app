@@ -63,6 +63,21 @@ export const api = {
         return transformedData;
     },
 
+    savePushToken: async (token) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/profiles/push-token`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ token })
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Backend Error:", response.status, errorText);
+            throw new Error(`Failed to save push token: ${response.status} - ${errorText}`);
+        }
+        return response.json();
+    },
+
     updateProfile: async (data) => {
         const headers = await getHeaders();
         const auth = getAuth();
@@ -361,14 +376,24 @@ export const api = {
 
     // Messaging
     sendMessage: async (receiverId, content) => {
+        console.log("sending message to:", receiverId, "content:", content);
         const headers = await getHeaders();
         const response = await fetch(`${API_BASE_URL}/messages/send`, {
             method: 'POST',
             headers,
             body: JSON.stringify({ receiverId, content })
         });
-        if (!response.ok) throw new Error('Failed to send message');
-        return response.json();
+
+        console.log("SendMessage Response Status:", response.status);
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("SendMessage Error Body:", errText);
+            throw new Error('Failed to send message: ' + errText);
+        }
+
+        const data = await response.json();
+        console.log("SendMessage Success Data:", data);
+        return data;
     },
 
     getMessages: async (targetUserId) => {
@@ -378,6 +403,17 @@ export const api = {
             headers
         });
         if (!response.ok) throw new Error('Failed to fetch messages');
+        return response.json();
+    },
+
+    markMessagesRead: async (senderId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/mark-read`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ senderId })
+        });
+        if (!response.ok) throw new Error('Failed to mark messages as read');
         return response.json();
     },
 
@@ -406,9 +442,14 @@ export const api = {
         return response.json();
     },
     // Measurement / Progress Tracking
-    getMeasurementHistory: async (type, startDate, endDate) => {
+    getMeasurementHistory: async (type, startDate, endDate, userId = null) => {
         const headers = await getHeaders();
-        const response = await fetch(`${API_BASE_URL}/measurement_logs?type_filter=${type}&start_date=${startDate}&end_date=${endDate}`, {
+        let url = `${API_BASE_URL}/measurement_logs?type_filter=${type}&start_date=${startDate}&end_date=${endDate}`;
+        if (userId) {
+            url += `&user_id=${userId}`; // Backend support needed, or use 'target_user_id' convention if consistent
+        }
+
+        const response = await fetch(url, {
             method: 'GET',
             headers
         });
@@ -427,9 +468,13 @@ export const api = {
         return response.json();
     },
 
-    getWorkoutStats: async (startDate, endDate) => {
+    getWorkoutStats: async (startDate, endDate, userId = null) => {
         const headers = await getHeaders();
-        const response = await fetch(`${API_BASE_URL}/sessions?start_date=${startDate}&end_date=${endDate}`, {
+        let url = `${API_BASE_URL}/sessions?start_date=${startDate}&end_date=${endDate}`;
+        if (userId) {
+            url += `&user_id=${userId}`;
+        }
+        const response = await fetch(url, {
             method: 'GET',
             headers
         });
@@ -437,9 +482,13 @@ export const api = {
         return response.json();
     },
 
-    getPersonalRecords: async () => {
+    getPersonalRecords: async (userId = null) => {
         const headers = await getHeaders();
-        const response = await fetch(`${API_BASE_URL}/workouts/prs`, {
+        let url = `${API_BASE_URL}/workouts/prs`;
+        if (userId) {
+            url += `?user_id=${userId}`;
+        }
+        const response = await fetch(url, {
             method: 'GET',
             headers
         });
@@ -458,6 +507,16 @@ export const api = {
             headers
         });
         if (!response.ok) throw new Error('Failed to fetch exercises');
+        return response.json();
+    },
+
+    getUnreadCount: async () => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/unread-count`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch unread count');
         return response.json();
     }
 };

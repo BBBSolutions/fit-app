@@ -9,9 +9,18 @@ import ProgressScreen from '../screens/Member/ProgressScreen';
 import MessagesScreen from '../screens/Member/MessagesScreen';
 import ProfileScreen from '../screens/Member/ProfileScreen';
 
+import { setupNotifications } from '../services/notifications';
+import { useChat } from '../context/ChatContext';
+
 const Tab = createBottomTabNavigator();
 
 const MainBottomTabs = () => {
+    const { unreadCount } = useChat();
+
+    React.useEffect(() => {
+        setupNotifications();
+    }, []);
+
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
@@ -60,7 +69,14 @@ const MainBottomTabs = () => {
             <Tab.Screen name="Home" component={MemberHomeDashboardScreen} />
             <Tab.Screen name="Workouts" component={WorkoutPlansScreen} />
             <Tab.Screen name="Progress" component={ProgressScreen} />
-            <Tab.Screen name="Messages" component={MessagesScreen} />
+            <Tab.Screen
+                name="Messages"
+                component={MessagesScreen}
+                options={{
+                    tabBarBadge: unreadCount > 0 ? unreadCount : null,
+                    tabBarBadgeStyle: { backgroundColor: 'red', color: 'white' }
+                }}
+            />
             <Tab.Screen name="Profile" component={ProfileScreen} />
         </Tab.Navigator>
     );

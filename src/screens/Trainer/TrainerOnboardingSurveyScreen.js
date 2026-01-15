@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -11,6 +11,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
 
 const TrainerOnboardingSurveyScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
@@ -18,7 +19,7 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
         fullName: '',
         age: '',
         gender: '',
-        phoneNumber: '+91 234 567 8900', // Pre-filled from verification
+        phoneNumber: '',
         email: '',
         yearsOfExperience: '',
         primarySpecialization: '',
@@ -29,6 +30,8 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
         clientType: '',
         maxClients: '',
         bio: '',
+
+
     });
 
     const [showDropdown, setShowDropdown] = useState({
@@ -39,6 +42,50 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
         coachingMethod: false,
         clientType: false,
     });
+
+    useEffect(() => {
+        loadExistingProfile();
+    }, []);
+
+    const loadExistingProfile = async () => {
+        try {
+            setLoading(true);
+            const { getAuth } = require('firebase/auth');
+            const auth = getAuth();
+            const currentUser = auth.currentUser;
+            const loginPhoneNumber = currentUser?.phoneNumber || '';
+
+            const profile = await api.getProfile();
+            if (profile) {
+                console.log("Loading existing profile for edit:", profile);
+                setFormData(prev => ({
+                    ...prev,
+                    fullName: profile.fullName || profile.name || prev.fullName,
+                    age: profile.age ? profile.age.toString() : prev.age,
+                    gender: profile.gender || prev.gender,
+                    // Use profile phone if exists, otherwise fallback to login phone
+                    phoneNumber: profile.phone || profile.phoneNumber || loginPhoneNumber,
+                    email: profile.email || prev.email,
+                    yearsOfExperience: profile.yearsOfExperience || prev.yearsOfExperience,
+                    primarySpecialization: profile.primarySpecialization || prev.primarySpecialization,
+                    secondarySkills: profile.secondarySkills || prev.secondarySkills,
+                    certificationType: profile.certificationType || prev.certificationType,
+                    certificationNotes: profile.certificationNotes || prev.certificationNotes,
+                    coachingMethod: profile.coachingMethod || prev.coachingMethod,
+                    clientType: profile.clientType || prev.clientType,
+                    maxClients: profile.maxClients ? profile.maxClients.toString() : prev.maxClients,
+                    bio: profile.bio || prev.bio,
+                }));
+            } else if (loginPhoneNumber) {
+                // No profile yet, but we have login phone
+                setFormData(prev => ({ ...prev, phoneNumber: loginPhoneNumber }));
+            }
+        } catch (error) {
+            console.error("Failed to load existing profile:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Dropdown options
     const genderOptions = ['Male', 'Female', 'Other'];
@@ -104,7 +151,7 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
             console.log('Profile saved successfully');
             setLoading(false);
             // Navigate directly for web compatibility
-            navigation.replace('TrainerDashboard');
+            navigation.replace('TrainerMainApp');
         } catch (error) {
             console.error('Failed to save trainer profile:', error);
             setLoading(false);
@@ -177,9 +224,11 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
 
                     <Text style={styles.label}>Phone Number</Text>
                     <TextInput
-                        style={[styles.input, styles.inputDisabled]}
+                        style={styles.input}
                         value={formData.phoneNumber}
-                        editable={false}
+                        placeholder="e.g., +1 234 567 8900"
+                        keyboardType="phone-pad"
+                        onChangeText={(text) => updateField('phoneNumber', text)}
                     />
 
                     <Text style={styles.label}>Email Address *</Text>

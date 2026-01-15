@@ -63,6 +63,23 @@ serve(async (req) => {
         const url = new URL(req.url);
         const path = url.pathname.replace(/\/$/, '').split('/').pop(); // "get" or "update" or "profiles"
 
+        // --- Specific Routes First ---
+        if (path === 'push-token' && req.method === 'POST') {
+            const { token } = await req.json();
+            console.log("Saving push token for user:", userId, token);
+
+            const { error } = await supabaseClient
+                .from('profiles')
+                .update({ push_token: token })
+                .eq('user_id', userId);
+
+            if (error) throw error;
+
+            return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" }
+            });
+        }
+
         if (path === 'get' || req.method === 'GET') {
             // Check if specific userId is requested
             const requestedUserId = url.searchParams.get('userId');
@@ -75,6 +92,18 @@ serve(async (req) => {
                 .eq('user_id', targetId)
                 .single();
             if (error) throw error;
+
+            // Fetch trainer info if it exists (for Members)
+            const { data: trainerRelation } = await supabaseClient
+                .from('trainer_clients')
+                .select('trainer_id')
+                .eq('client_id', targetId)
+                .single();
+
+            if (trainerRelation) {
+                // @ts-ignore
+                profile.trainer_id = trainerRelation.trainer_id;
+            }
 
             return new Response(JSON.stringify(profile), {
                 headers: { ...corsHeaders, "Content-Type": "application/json" }

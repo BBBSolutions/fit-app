@@ -9,9 +9,11 @@ import {
     Image,
 } from 'react-native';
 import { api } from '../../services/api';
+import { useChat } from '../../context/ChatContext';
 import { useFocusEffect } from '@react-navigation/native';
 
 const MemberHomeDashboardScreen = ({ navigation }) => {
+    const { unreadCount } = useChat();
     const [userName, setUserName] = useState('');
     const [stats, setStats] = useState({
         streak: 0,

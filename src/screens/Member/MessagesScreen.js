@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { useChat } from '../../context/ChatContext';
 
 const MessagesScreen = ({ route, navigation }) => {
     const { trainerId } = route.params || {};
@@ -30,28 +31,54 @@ const MessagesScreen = ({ route, navigation }) => {
 
     // ... code ...
 
+    const [activeTrainerId, setActiveTrainerId] = useState(trainerId);
+
     useEffect(() => {
-        if (trainerId) {
-            // optimized: only fetch if name is missing
-            if (!trainerName) {
-                api.getProfileById(trainerId).then(profile => {
+        const loadTrainerInfo = async () => {
+            if (!activeTrainerId) {
+                try {
+                    const profile = await api.getProfile();
+
+                    // Try multiple possible keys for trainer ID
+                    const possibleTrainerId = profile.trainerId || profile.trainer_id || profile.assignedTrainerId || profile.assigned_trainer_id;
+
+                    if (possibleTrainerId) {
+                        setActiveTrainerId(possibleTrainerId);
+                        // Also fetch trainer name
+                        api.getProfileById(possibleTrainerId).then(trainerProfile => {
+                            setTrainerName(trainerProfile.name);
+                        }).catch(err => console.log("Failed to fetch trainer name", err));
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch profile/trainer info:", error);
+                }
+            } else if (!trainerName) {
+                api.getProfileById(activeTrainerId).then(profile => {
                     setTrainerName(profile.name);
                 }).catch(err => console.log("Failed to fetch trainer name", err));
             }
+        };
+        loadTrainerInfo();
+    }, [activeTrainerId]);
 
+    const { markAsRead } = useChat();
+
+    useEffect(() => {
+        if (activeTrainerId) {
             fetchMessages();
+            markAsRead(activeTrainerId); // Mark as read when entering chat
             // Poll for new messages every 10 seconds
             pollInterval.current = setInterval(fetchMessages, 10000);
         }
         return () => {
             if (pollInterval.current) clearInterval(pollInterval.current);
         };
-    }, [trainerId]);
+    }, [activeTrainerId]);
 
     const fetchMessages = async (isRefresh = false) => {
         try {
             if (!isRefresh && messages.length === 0) setLoading(true);
-            const data = await api.getMessages(trainerId);
+            const data = await api.getMessages(activeTrainerId);
             setMessages(data);
         } catch (error) {
             console.error("Failed to load messages:", error);
@@ -69,7 +96,7 @@ const MessagesScreen = ({ route, navigation }) => {
     const handleSendMessage = async () => {
         if (!newMessage.trim()) return;
         try {
-            await api.sendMessage(trainerId, newMessage);
+            await api.sendMessage(activeTrainerId, newMessage);
             setNewMessage('');
             fetchMessages(true); // Immediate refresh
         } catch (error) {
@@ -77,7 +104,7 @@ const MessagesScreen = ({ route, navigation }) => {
         }
     };
 
-    if (!trainerId) {
+    if (!activeTrainerId) {
         return (
             <SafeAreaView style={styles.safeArea}>
                 <View style={styles.container}>
@@ -140,10 +167,10 @@ const MessagesScreen = ({ route, navigation }) => {
                             // Logic: If sender is ME (user), show on right.
                             // But wait, the API returns messages relative to ids.
                             // We don't have 'me' ID easily available in variable unless we store it.
-                            // However, we know 'trainerId'. So if sender_id === trainerId, it's incoming.
-                            // If sender_id !== trainerId, it MUST be me.
+                            // However, we know 'activeTrainerId'. So if sender_id === activeTrainerId, it's incoming.
+                            // If sender_id !== activeTrainerId, it MUST be me.
 
-                            const isMe = msg.sender_id !== trainerId;
+                            const isMe = msg.sender_id !== activeTrainerId;
 
                             return (
                                 <View key={index} style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>

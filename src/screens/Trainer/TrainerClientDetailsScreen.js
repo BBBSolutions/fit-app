@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -17,38 +17,91 @@ import {
     RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../../services/api';
+import { colors } from '../../theme/theme';
+import { useChat } from '../../context/ChatContext';
+import TrainerCreateWorkoutModal from '../../components/Trainer/TrainerCreateWorkoutModal';
 
 const TrainerClientDetailsScreen = ({ route, navigation }) => {
-    // Get client data passed from params
-    const { client } = route.params || {};
+    // Get params - handle both full client object and just ID
+    const { client, clientId, initialTab } = route.params || {};
 
-    const [activeTab, setActiveTab] = useState('Overview');
+    const [clientData, setClientData] = useState(client || null);
+    const [loadingClient, setLoadingClient] = useState(!client && !!clientId);
+    const [activeTab, setActiveTab] = useState(initialTab || 'Overview');
+
     const [assignedWorkouts, setAssignedWorkouts] = useState([]);
     const [loadingAssignments, setLoadingAssignments] = useState(false);
 
-    // Assignment State
+    // Assignment States
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [trainerWorkouts, setTrainerWorkouts] = useState([]);
     const [loadingWorkouts, setLoadingWorkouts] = useState(false);
+
+    // Custom Creation State
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [loadingCreate, setLoadingCreate] = useState(false);
+
+    // Helper to get display name
+    const getClientName = (data) => {
+        if (!data) return 'Client';
+        return data.name || data.full_name || data.fullName || 'Client';
+    };
+
+    // Trainer Profile State
+    const [currentTrainer, setCurrentTrainer] = useState(null);
+
+    // Refresh State
+    const [refreshing, setRefreshing] = useState(false);
 
     // Messaging State
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [loadingMessages, setLoadingMessages] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
     const pollInterval = useRef(null);
-    const scrollViewRef = React.useRef();
+    const scrollViewRef = useRef();
 
-    const onRefresh = React.useCallback(() => {
-        setRefreshing(true);
-        fetchMessages(true).finally(() => setRefreshing(false));
-    }, []);
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                // 1. Fetch Trainer Profile
+                const profile = await api.getProfile();
+                setCurrentTrainer(profile);
+
+                // 2. Fetch Client Data
+                if (clientId) {
+                    setLoadingClient(true);
+                    try {
+                        // Use getClients to get the full view (status, lastActive, age) as defined in backend
+                        const clients = await api.getClients();
+                        const found = clients.find(c => c.id === clientId);
+                        if (found) {
+                            setClientData(found);
+                        } else {
+                            // Fallback to profile fetch if not in list (edge case)
+                            const fetchedProfile = await api.getProfileById(clientId);
+                            setClientData(fetchedProfile);
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch client details:", err);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load data", error);
+                Alert.alert("Error", "Failed to load client details");
+            } finally {
+                setLoadingClient(false);
+            }
+        };
+        loadData();
+    }, [clientId]);
 
     const fetchMessages = async (isBackground = false) => {
+        if (!clientData) return;
         try {
             if (!isBackground) setLoadingMessages(true);
-            const data = await api.getMessages(client.id);
+            const data = await api.getMessages(clientData.id);
             setMessages(data);
         } catch (error) {
             console.error("Failed to load messages:", error);
@@ -58,9 +111,9 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
     };
 
     const handleSendMessage = async () => {
-        if (!newMessage.trim()) return;
+        if (!newMessage.trim() || !clientData) return;
         try {
-            await api.sendMessage(client.id, newMessage);
+            await api.sendMessage(clientData.id, newMessage);
             setNewMessage('');
             fetchMessages(true); // Refresh chat immediately
         } catch (error) {
@@ -68,94 +121,93 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
         }
     };
 
-    // ... (assignments logic omitted)
+    const fetchAssignedWorkouts = async (isBackground = false) => {
+        if (!clientData) return;
+        try {
+            if (!isBackground) setLoadingAssignments(true);
+            const data = await api.getAssignedWorkouts(clientData.id);
+            setAssignedWorkouts(data);
+        } catch (error) {
+            console.error(error);
+            // Don't alert on background poll failure to avoid annoying the user
+            if (!isBackground) Alert.alert("Error", "Failed to fetch assigned workouts");
+        } finally {
+            if (!isBackground) setLoadingAssignments(false);
+        }
+    };
+
+    // Auto-refresh when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            if (clientData) {
+                fetchAssignedWorkouts();
+            }
+        }, [clientData])
+    );
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // Refresh both workouts and messages if needed
+        Promise.all([
+            fetchAssignedWorkouts(),
+            fetchMessages(true)
+        ]).finally(() => setRefreshing(false));
+    }, [clientData]);
+
+    const { markAsRead } = useChat();
 
     useEffect(() => {
-        if (activeTab === 'Messages' && client) {
-            fetchMessages();
-            // Poll for new messages every 10 seconds
-            pollInterval.current = setInterval(() => fetchMessages(true), 10000);
-        } else {
-            // Clear interval if switching tabs
-            if (pollInterval.current) clearInterval(pollInterval.current);
+        // Clear any existing interval when tab/client changes
+        if (pollInterval.current) clearInterval(pollInterval.current);
+
+        if (clientData) {
+            if (activeTab === 'Messages') {
+                fetchMessages();
+                markAsRead(clientData.id);
+                pollInterval.current = setInterval(() => fetchMessages(true), 5000); // 5s for chat
+            } else if (activeTab === 'Workouts') {
+                fetchAssignedWorkouts(true);
+                pollInterval.current = setInterval(() => fetchAssignedWorkouts(true), 5000); // 5s for workouts
+            }
         }
 
         return () => {
             if (pollInterval.current) clearInterval(pollInterval.current);
         };
-    }, [activeTab, client]);
+    }, [activeTab, clientData]);
 
-    const fetchAssignedWorkouts = async () => {
-        try {
-            setLoadingAssignments(true);
-            const data = await api.getAssignedWorkouts(client.id);
-            setAssignedWorkouts(data);
-        } catch (error) {
-            console.error(error);
-            Alert.alert("Error", "Failed to fetch assigned workouts");
-        } finally {
-            setLoadingAssignments(false);
+    const handleCreateCustomWorkout = async (workoutData) => {
+        if (!currentTrainer || !clientData) {
+            Alert.alert("Error", "Trainer profile or client data not loaded. Please try again.");
+            return;
         }
-    };
 
-    const handleOpenAssignModal = async () => {
-        setShowAssignModal(true);
-        if (trainerWorkouts.length === 0) {
-            try {
-                setLoadingWorkouts(true);
-                const workouts = await api.getWorkouts();
-                setTrainerWorkouts(workouts);
-            } catch (error) {
-                Alert.alert("Error", "Failed to load workouts");
-            } finally {
-                setLoadingWorkouts(false);
+        setLoadingCreate(true);
+        try {
+            // 1. Create the custom workout
+            const created = await api.createCustomWorkout(workoutData);
+
+            // 2. Assign it to the client
+            const workoutId = created.workout_id || created.id; // handle partial response inconsistency if any
+
+            if (workoutId) {
+                // Corrected: pass trainerId first
+                await api.assignWorkout(currentTrainer.id, clientData.id, workoutId);
+
+                Alert.alert("Success", "Custom plan created and assigned!");
+                setShowCreateModal(false);
+                fetchAssignedWorkouts(); // Refresh list
+            } else {
+                Alert.alert("Error", "Created workout but failed to get ID.");
             }
-        }
-    };
 
-    const handleAssignWorkout = async (workoutId) => {
-        try {
-            await api.assignWorkout(client.id, workoutId);
-            setShowAssignModal(false);
-            Alert.alert("Success", "Workout assigned successfully!");
-            fetchAssignedWorkouts();
         } catch (error) {
-            Alert.alert("Error", "Failed to assign workout");
+            console.error("Create Custom Error:", error);
+            Alert.alert("Error", "Failed to create custom workout.");
+        } finally {
+            setLoadingCreate(false);
         }
     };
-
-    useEffect(() => {
-        if (client) {
-            fetchAssignedWorkouts();
-        }
-    }, [client]);
-
-    useEffect(() => {
-        if (activeTab === 'Messages' && client) {
-            fetchMessages();
-            // Optional: Set up polling here if needed, or stick to manual refresh for now
-        }
-    }, [activeTab, client]);
-
-
-    // Fallback if no client data
-    if (!client) {
-        return (
-            <SafeAreaView style={styles.safeArea}>
-                <View style={styles.container}>
-                    <Text>No client data found.</Text>
-                </View>
-            </SafeAreaView>
-        );
-    }
-
-    const renderWorkoutItem = ({ item }) => (
-        <TouchableOpacity style={styles.workoutCard} onPress={() => handleAssignWorkout(item.id)}>
-            <Text style={styles.workoutName}>{item.title}</Text>
-            <Text style={styles.workoutMeta}>{item.difficulty} • {item.duration}</Text>
-            <Ionicons name="add-circle-outline" size={24} color="#3182CE" />
-        </TouchableOpacity>
-    );
 
     const renderAssignedItem = ({ item }) => (
         <View style={styles.assignedCard}>
@@ -169,27 +221,42 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
         </View>
     );
 
+    if (loadingClient || !clientData) {
+        return (
+            <SafeAreaView style={styles.safeArea}>
+                <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <ActivityIndicator size="large" color={colors.trainer.primary} />
+                </View>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.container}>
-                {/* Header / Nav Bar */}
+                {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="#1A202C" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>{client.name}</Text>
+                    <Text style={styles.headerTitle}>{getClientName(clientData)}</Text>
                     <TouchableOpacity style={styles.menuButton}>
                         <Ionicons name="ellipsis-horizontal" size={24} color="#1A202C" />
                     </TouchableOpacity>
                 </View>
 
                 {activeTab !== 'Messages' ? (
-                    <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+                    <ScrollView
+                        contentContainerStyle={{ paddingBottom: 100 }}
+                        refreshControl={
+                            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                        }
+                    >
                         {/* Profile Section */}
                         <View style={styles.profileSection}>
-                            {client.image ? (
+                            {clientData.image ? (
                                 <Image
-                                    source={{ uri: client.image }}
+                                    source={{ uri: clientData.image }}
                                     style={styles.profileImage}
                                 />
                             ) : (
@@ -197,11 +264,11 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                                     <Ionicons name="person" size={50} color="#CBD5E0" />
                                 </View>
                             )}
-                            <Text style={styles.clientName}>{client.name}</Text>
-                            <Text style={styles.clientGoal}>{client.goal || 'No specific goal'}</Text>
+                            <Text style={styles.clientName}>{getClientName(clientData)}</Text>
+                            <Text style={styles.clientGoal}>{clientData.goal || 'No specific goal'}</Text>
                             <View style={styles.statusBadge}>
-                                <View style={[styles.statusDot, { backgroundColor: client.status === 'Active' ? '#48BB78' : '#ECC94B' }]} />
-                                <Text style={styles.statusText}>{client.status || 'Active'}</Text>
+                                <View style={[styles.statusDot, { backgroundColor: clientData.status === 'Active' ? '#48BB78' : '#ECC94B' }]} />
+                                <Text style={styles.statusText}>{clientData.status || 'Active'}</Text>
                             </View>
                         </View>
 
@@ -209,15 +276,19 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                         <View style={styles.statsContainer}>
                             <View style={styles.statCard}>
                                 <Text style={styles.statLabel}>Plan</Text>
-                                <Text style={styles.statValue}>{client.plan || 'N/A'}</Text>
+                                <Text style={styles.statValue}>{clientData.plan || 'N/A'}</Text>
                             </View>
                             <View style={styles.statCard}>
                                 <Text style={styles.statLabel}>Last Active</Text>
-                                <Text style={styles.statValue}>{client.lastActive || 'Never'}</Text>
+                                <Text style={styles.statValue}>
+                                    {clientData.lastActive && clientData.lastActive !== 'Unknown'
+                                        ? new Date(clientData.lastActive).toLocaleDateString()
+                                        : 'Never'}
+                                </Text>
                             </View>
                             <View style={styles.statCard}>
                                 <Text style={styles.statLabel}>Age</Text>
-                                <Text style={styles.statValue}>{client.age || 'N/A'}</Text>
+                                <Text style={styles.statValue}>{clientData.age || 'N/A'}</Text>
                             </View>
                         </View>
 
@@ -237,7 +308,13 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                         {/* Content Based on Tab */}
                         {activeTab === 'Overview' && (
                             <View>
-                                <TouchableOpacity style={styles.card}>
+                                <TouchableOpacity
+                                    style={styles.card}
+                                    onPress={() => navigation.navigate('TrainerClientProgress', {
+                                        clientId: clientData.id,
+                                        clientName: clientData.name
+                                    })}
+                                >
                                     <View style={styles.cardRow}>
                                         <Ionicons name="bar-chart-outline" size={24} color="#3182CE" />
                                         <View style={styles.cardTextContainer}>
@@ -262,9 +339,11 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
 
                         {activeTab === 'Workouts' && (
                             <View style={{ paddingHorizontal: 20 }}>
-                                <TouchableOpacity style={styles.assignButton} onPress={handleOpenAssignModal}>
-                                    <Ionicons name="add" size={20} color="#FFF" />
-                                    <Text style={styles.assignButtonText}>Assign New Workout</Text>
+                                <TouchableOpacity style={styles.createButton} onPress={() => setShowCreateModal(true)}>
+                                    <View style={styles.createIconContainer}>
+                                        <Ionicons name="add" size={24} color="#FFF" />
+                                    </View>
+                                    <Text style={styles.createButtonText}>Create & Assign New Plan</Text>
                                 </TouchableOpacity>
 
                                 {loadingAssignments ? (
@@ -311,7 +390,7 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                                 <Text style={styles.emptyText}>No messages yet. Say hello!</Text>
                             )}
                             {messages.map((msg, index) => {
-                                const isMe = msg.sender_id !== client.id; // If sender is NOT client, it's me (trainer)
+                                const isMe = msg.sender_id !== clientData.id; // If sender is NOT client, it's me (trainer)
                                 return (
                                     <View key={index} style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
                                         <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>{msg.content}</Text>
@@ -337,35 +416,13 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
 
             </View>
 
-            {/* Assignment Modal */}
-            <Modal
-                visible={showAssignModal}
-                animationType="fade"
-                transparent={true}
-                onRequestClose={() => setShowAssignModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Select Workout to Assign</Text>
-                            <TouchableOpacity onPress={() => setShowAssignModal(false)}>
-                                <Text style={styles.closeText}>Close</Text>
-                            </TouchableOpacity>
-                        </View>
-                        {loadingWorkouts ? (
-                            <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#3182CE" />
-                        ) : (
-                            <FlatList
-                                data={trainerWorkouts}
-                                keyExtractor={item => item.id}
-                                renderItem={renderWorkoutItem}
-                                contentContainerStyle={{ padding: 20 }}
-                                ListEmptyComponent={<Text style={styles.emptyText}>No workouts found in your library.</Text>}
-                            />
-                        )}
-                    </View>
-                </View>
-            </Modal>
+            {/* Create Custom Workout Modal */}
+            <TrainerCreateWorkoutModal
+                visible={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                onSave={handleCreateCustomWorkout}
+                loadingSave={loadingCreate}
+            />
         </SafeAreaView>
     );
 };
@@ -396,16 +453,11 @@ const styles = StyleSheet.create({
     cardTextContainer: { flex: 1, marginLeft: 16 },
     cardTitle: { fontSize: 16, fontWeight: '600', color: '#2D3748' },
     cardSubtitle: { fontSize: 14, color: '#718096', marginTop: 2 },
-    assignButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3182CE', padding: 16, borderRadius: 12, marginBottom: 20 },
-    assignButtonText: { color: '#FFF', fontWeight: '700', marginLeft: 8 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    modalContent: { width: '90%', maxHeight: '80%', backgroundColor: '#F7FAFC', borderRadius: 16, overflow: 'hidden' },
-    modalHeader: { padding: 20, backgroundColor: '#FFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    modalTitle: { fontSize: 18, fontWeight: '700' },
-    closeText: { color: '#3182CE', fontSize: 16 },
-    workoutCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    workoutName: { fontSize: 16, fontWeight: '700', color: '#2D3748' },
-    workoutMeta: { fontSize: 14, color: '#718096' },
+
+    createButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3182CE', padding: 18, borderRadius: 16, marginBottom: 20, shadowColor: '#3182CE', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+    createIconContainer: { marginRight: 10 },
+    createButtonText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+
     assignedCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     statusTag: { backgroundColor: '#E6FFFA', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
     statusTagText: { color: '#38B2AC', fontSize: 12, fontWeight: '700' },

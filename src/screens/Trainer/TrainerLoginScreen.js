@@ -66,7 +66,7 @@ const TrainerLoginScreen = ({ navigation }) => {
                         console.log("Login Profile Check:", profile);
 
                         if (profile && profile.fullName && profile.primarySpecialization) {
-                            navigation.replace('TrainerDashboard'); // Use replace to prevent back button
+                            navigation.replace('TrainerMainApp'); // Use replace to prevent back button
                         } else {
                             navigation.navigate('TrainerOnboarding');
                         }

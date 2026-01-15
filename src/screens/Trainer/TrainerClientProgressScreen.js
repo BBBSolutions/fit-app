@@ -6,20 +6,20 @@ import {
     ScrollView,
     SafeAreaView,
     TouchableOpacity,
-    Modal,
-    TextInput,
-    Alert,
     Dimensions,
-    RefreshControl
+    RefreshControl,
+    Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useFocusEffect } from '@react-navigation/native';
-import { LineChart } from "react-native-chart-kit"; // Ensure this is installed
+import { LineChart } from "react-native-chart-kit";
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const ProgressScreen = () => {
+const TrainerClientProgressScreen = ({ route, navigation }) => {
+    const { clientId, clientName } = route.params || {};
+
     // State
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -38,15 +38,14 @@ const ProgressScreen = () => {
         history: []
     });
 
-    const [chartPeriod, setChartPeriod] = useState('3 Months'); // '1 Month', '3 Months', 'All'
+    const [chartPeriod, setChartPeriod] = useState('3 Months');
     const [personalRecords, setPersonalRecords] = useState([]);
 
     const [selectedMetric, setSelectedMetric] = useState('weight');
     const [chartData, setChartData] = useState([]);
-    const [metricHistory, setMetricHistory] = useState([]); // Raw history for analysis
+    const [metricHistory, setMetricHistory] = useState([]);
     const [analysis, setAnalysis] = useState({ change: 0, avgWeekly: 0, direction: 'neutral' });
 
-    // Measurements Config
     const metrics = [
         { id: 'weight', label: 'Weight', unit: 'kg' },
         { id: 'waist', label: 'Waist', unit: 'cm' },
@@ -56,23 +55,13 @@ const ProgressScreen = () => {
         { id: 'thighs', label: 'Thighs', unit: 'cm' },
     ];
 
-    // Edit Modal
-    // Edit Modal
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editedDetails, setEditedDetails] = useState({});
-    const [newWeight, setNewWeight] = useState(''); // Specific for Weight input
-    const [newValue, setNewValue] = useState(''); // Generic value placeholder if needed
-
     const fetchData = useCallback(async () => {
+        if (!clientId) return;
         setLoading(true);
         try {
-            // 1. Profile
-            // 1. Profile
-            const profile = await api.getProfile();
+            // 1. Profile (Target User)
+            const profile = await api.getProfileById(clientId);
 
-            // Normalize: Move legacy top-level fields into body_measurements
-            // This ensures the Edit Modal has a complete object to work with,
-            // preventing data loss when only one field is edited.
             const normalizedMeasurements = {
                 ...(profile.body_measurements || {}),
                 waist: profile.body_measurements?.waist || profile.waist,
@@ -88,32 +77,28 @@ const ProgressScreen = () => {
             };
 
             setMemberDetails(normalizedProfile);
-            setEditedDetails(normalizedProfile); // Now 'editedDetails' has the full picture
 
             if (profile.weight) {
                 setCurrentWeight(parseFloat(profile.weight));
-                setNewWeight(profile.weight);
             }
 
-            // 2. Metric History
+            // 2. Metric History (Target User)
             const endDate = new Date().toISOString().split('T')[0];
             const startDateObj = new Date();
             if (chartPeriod === '1 Month') startDateObj.setDate(startDateObj.getDate() - 30);
             else if (chartPeriod === '3 Months') startDateObj.setDate(startDateObj.getDate() - 90);
-            else startDateObj.setDate(startDateObj.getDate() - 365); // All/Year
+            else startDateObj.setDate(startDateObj.getDate() - 365);
 
             const startDate = startDateObj.toISOString().split('T')[0];
 
-            // Use selectedMetric
-            const history = await api.getMeasurementHistory(selectedMetric, startDate, endDate);
+            // Use selectedMetric with clientId
+            const history = await api.getMeasurementHistory(selectedMetric, startDate, endDate, clientId);
             setMetricHistory(history || []);
 
             // Format for Chart
             if (history && history.length > 0) {
-                // Sort by date just in case
                 const sorted = [...history].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-                // Thin out data points for chart readability if too many
                 const formatted = sorted.map(h => ({
                     value: parseFloat(h.value),
                     date: h.date,
@@ -128,10 +113,8 @@ const ProgressScreen = () => {
                     const initial = parseFloat(sorted[0].value);
                     const totalChange = (latest - initial).toFixed(1);
 
-                    // Simple trend analysis
                     const direction = totalChange < 0 ? 'down' : totalChange > 0 ? 'up' : 'neutral';
 
-                    // Calculate rough weekly average
                     const weeks = Math.max(1, (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24 * 7));
                     const avgWeekly = (totalChange / weeks).toFixed(2);
 
@@ -144,27 +127,25 @@ const ProgressScreen = () => {
                 setAnalysis({ change: 0, avgWeekly: 0, direction: 'neutral' });
             }
 
-            // 3. Workout Stats (This Week)
+            // 3. Workout Stats (Target User)
             try {
                 const today = new Date();
-                const day = today.getDay(); // 0 (Sun) - 6 (Sat)
-                const diff = day === 0 ? 6 : day - 1; // Adjust so Monday is 0, Sunday is 6
+                const day = today.getDay();
+                const diff = day === 0 ? 6 : day - 1;
 
                 const firstDayOfWeek = new Date(today);
-                firstDayOfWeek.setDate(today.getDate() - diff); // Monday
+                firstDayOfWeek.setDate(today.getDate() - diff);
 
                 const endOfWeek = new Date(firstDayOfWeek);
-                endOfWeek.setDate(firstDayOfWeek.getDate() + 6); // Sunday
-
-                // Set end of week to end of the day to ensure we catch today's workouts
+                endOfWeek.setDate(firstDayOfWeek.getDate() + 6);
                 endOfWeek.setHours(23, 59, 59, 999);
 
                 const weekStart = firstDayOfWeek.toISOString().split('T')[0];
-                const weekEnd = endOfWeek.toISOString(); // Send full ISO string to capture time
+                const weekEnd = endOfWeek.toISOString();
 
-                const sessions = await api.getWorkoutStats(weekStart, weekEnd);
+                // Pass clientId
+                const sessions = await api.getWorkoutStats(weekStart, weekEnd, clientId);
 
-                // Aggregate
                 let count = 0;
                 let cals = 0;
                 let mins = 0;
@@ -193,19 +174,16 @@ const ProgressScreen = () => {
                 });
             } catch (statsError) {
                 console.error("Failed to load workout stats:", statsError);
-                // Don't fail the whole screen
             }
 
-            // 4. Personal Records
+            // 4. Personal Records (Target User)
             try {
-                const prs = await api.getPersonalRecords();
+                // Pass clientId
+                const prs = await api.getPersonalRecords(clientId);
                 setPersonalRecords(prs || []);
             } catch (prError) {
                 console.error("PR fetch failed:", prError);
             }
-
-
-
 
         } catch (error) {
             console.error("Fetch Data Error:", error);
@@ -214,7 +192,7 @@ const ProgressScreen = () => {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [selectedMetric, chartPeriod]);
+    }, [selectedMetric, chartPeriod, clientId]);
 
     useFocusEffect(
         useCallback(() => {
@@ -227,79 +205,6 @@ const ProgressScreen = () => {
         fetchData();
     };
 
-    const handleSaveDetails = async () => {
-        try {
-            // Extract latest measurements from the nested object
-            const measurements = editedDetails.body_measurements || {};
-
-            // Update Profile: Sync both JSONB and top-level columns to ensure persistence
-            // and overwrite any legacy "stuck" values.
-            const profileToUpdate = {
-                ...editedDetails,
-                weight: newWeight,
-                // Top-level overrides (match OnboardingSurvey schema where possible)
-                waist: measurements.waist || null,
-                hip: measurements.hips || measurements.hip || null,
-                chest: measurements.chest || null,
-                arms: measurements.arms || null,
-                thighs: measurements.thighs || null,
-
-                // Ensure JSONB is also fully updated
-                body_measurements: {
-                    ...measurements,
-                    hip: measurements.hips || measurements.hip
-                }
-            };
-
-            await api.updateProfile(profileToUpdate);
-
-            // Log Metrics History if changed
-            const today = new Date().toISOString().split('T')[0];
-
-            // 1. Weight
-            if (newWeight && parseFloat(newWeight) !== parseFloat(currentWeight)) {
-                try {
-                    await api.logMeasurement(today, 'weight', parseFloat(newWeight));
-                } catch (e) { console.error("Log weight failed", e); }
-            }
-
-            // 2. Other Measurements (Waist, Hips, etc.)
-            // Compare editedDetails.body_measurements with memberDetails.body_measurements
-            const oldMeasures = memberDetails.body_measurements || {};
-            const newMeasures = measurements;
-
-            // Map frontend keys to backend 'type' strings
-            const keyMap = {
-                waist: 'waist',
-                hips: 'hips', // or 'hip' depending on backend convention, usage seems mixed but 'hips' in metrics array
-                chest: 'chest',
-                arms: 'arms',
-                thighs: 'thighs'
-            };
-
-            for (const [key, type] of Object.entries(keyMap)) {
-                const oldVal = oldMeasures[key];
-                const newVal = newMeasures[key]; // Note: key in newMeasures depends on how TextInput updates it
-
-                // Handle 'hips' vs 'hip' ambiguity in newMeasures if needed, but TextInput updates keys directly
-                // If value changed and is not empty
-                if (newVal && newVal !== oldVal) {
-                    try {
-                        await api.logMeasurement(today, type, parseFloat(newVal));
-                    } catch (e) { console.error(`Log ${type} failed`, e); }
-                }
-            }
-
-            Alert.alert('Success', 'Profile updated');
-            setShowEditModal(false);
-            onRefresh(); // Reload data
-        } catch (e) {
-            console.error(e);
-            Alert.alert('Error', 'Failed to save profile');
-        }
-    };
-
-    // Chart Config
     const chartConfig = {
         backgroundGradientFrom: "#ffffff",
         backgroundGradientTo: "#ffffff",
@@ -311,6 +216,13 @@ const ProgressScreen = () => {
 
     return (
         <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color="#1A202C" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>{clientName ? `${clientName}'s Progress` : 'Client Progress'}</Text>
+            </View>
+
             <ScrollView
                 style={styles.container}
                 contentContainerStyle={styles.contentContainer}
@@ -318,7 +230,6 @@ const ProgressScreen = () => {
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                 }
             >
-                <Text style={styles.headerTitle}>Progress</Text>
 
                 {/* Metric Selector */}
                 <View style={styles.selectorContainer}>
@@ -364,7 +275,7 @@ const ProgressScreen = () => {
                     ) : (
                         <View style={styles.emptyChart}>
                             <Text style={styles.emptyText}>No data for {metrics.find(m => m.id === selectedMetric)?.label} yet.</Text>
-                            <Text style={styles.emptySubText}>Log an entry to see trends.</Text>
+                            <Text style={styles.emptySubText}>Encourage your client to log data!</Text>
                         </View>
                     )}
 
@@ -405,7 +316,7 @@ const ProgressScreen = () => {
                         </ScrollView>
                     ) : (
                         <View style={styles.emptyPrCard}>
-                            <Text style={styles.emptyText}>No records yet. Log a workout!</Text>
+                            <Text style={styles.emptyText}>No records yet.</Text>
                         </View>
                     )}
                 </View>
@@ -432,13 +343,10 @@ const ProgressScreen = () => {
                     </View>
                 </View>
 
-                {/* 3. My Details Snippet */}
+                {/* 3. My Details Snippet (Read Only) */}
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>My Details</Text>
-                        <TouchableOpacity onPress={() => setShowEditModal(true)}>
-                            <Ionicons name="create-outline" size={24} color="#3182CE" />
-                        </TouchableOpacity>
+                        <Text style={styles.cardTitle}>Details</Text>
                     </View>
                     <View style={styles.detailsGrid}>
                         <View style={styles.detailItem}>
@@ -481,112 +389,18 @@ const ProgressScreen = () => {
                 </View>
 
             </ScrollView>
-
-            {/* Edit Modal (Simplified for brevity) */}
-            <Modal visible={showEditModal} animationType="slide" transparent={true}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Update Body Stats</Text>
-                            <TouchableOpacity onPress={() => setShowEditModal(false)}>
-                                <Ionicons name="close" size={24} color="#000" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView style={{ maxHeight: 400 }}>
-                            <Text style={styles.label}>Weight (kg)</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={newWeight ? String(newWeight) : ''}
-                                onChangeText={setNewWeight}
-                                keyboardType="numeric"
-                            />
-
-                            <View style={styles.row}>
-                                <View style={styles.halfInput}>
-                                    <Text style={styles.label}>Waist (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.body_measurements?.waist || ''}
-                                        onChangeText={t => setEditedDetails({
-                                            ...editedDetails,
-                                            body_measurements: { ...editedDetails.body_measurements, waist: t }
-                                        })}
-                                        keyboardType="numeric"
-                                    />
-                                </View>
-                                <View style={styles.halfInput}>
-                                    <Text style={styles.label}>Hips (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.body_measurements?.hips || ''}
-                                        onChangeText={t => setEditedDetails({
-                                            ...editedDetails,
-                                            body_measurements: { ...editedDetails.body_measurements, hips: t }
-                                        })}
-                                        keyboardType="numeric"
-                                    />
-                                </View>
-                            </View>
-
-                            <View style={styles.row}>
-                                <View style={styles.halfInput}>
-                                    <Text style={styles.label}>Chest (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.body_measurements?.chest || ''}
-                                        onChangeText={t => setEditedDetails({
-                                            ...editedDetails,
-                                            body_measurements: { ...editedDetails.body_measurements, chest: t }
-                                        })}
-                                        keyboardType="numeric"
-                                    />
-                                </View>
-                                <View style={styles.halfInput}>
-                                    <Text style={styles.label}>Arms (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.body_measurements?.arms || ''}
-                                        onChangeText={t => setEditedDetails({
-                                            ...editedDetails,
-                                            body_measurements: { ...editedDetails.body_measurements, arms: t }
-                                        })}
-                                        keyboardType="numeric"
-                                    />
-                                </View>
-                            </View>
-
-                            <View style={styles.row}>
-                                <View style={styles.halfInput}>
-                                    <Text style={styles.label}>Thighs (cm)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={editedDetails.body_measurements?.thighs || ''}
-                                        onChangeText={t => setEditedDetails({
-                                            ...editedDetails,
-                                            body_measurements: { ...editedDetails.body_measurements, thighs: t }
-                                        })}
-                                        keyboardType="numeric"
-                                    />
-                                </View>
-                            </View>
-                        </ScrollView>
-
-                        <TouchableOpacity style={styles.saveButton} onPress={handleSaveDetails}>
-                            <Text style={styles.saveButtonText}>Save & Log</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#F5F7FA' },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EDF2F7' },
+    backButton: { marginRight: 15 },
+    headerTitle: { fontSize: 24, fontWeight: '800', color: '#1A202C' },
+
     container: { flex: 1 },
     contentContainer: { padding: 20, paddingBottom: 100 },
-    headerTitle: { fontSize: 28, fontWeight: '800', color: '#1A202C', marginBottom: 20 },
     card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
     cardTitle: { fontSize: 18, fontWeight: '700', color: '#2D3748' },
@@ -596,11 +410,6 @@ const styles = StyleSheet.create({
     emptyChart: { height: 180, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FAFC', borderRadius: 12 },
     emptyText: { color: '#718096', fontSize: 16, fontWeight: '600' },
     emptySubText: { color: '#A0AEC0', fontSize: 14, marginTop: 4 },
-
-    statsRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 15 },
-    statItem: { alignItems: 'center' },
-    statLabel: { fontSize: 12, color: '#718096', marginBottom: 4 },
-    statValue: { fontSize: 20, fontWeight: '700', color: '#2D3748' },
 
     section: { marginBottom: 20 },
     sectionTitle: { fontSize: 18, fontWeight: '700', color: '#2D3748', marginBottom: 12 },
@@ -614,15 +423,6 @@ const styles = StyleSheet.create({
     detailItem: { width: '48%', marginBottom: 15 },
     detailLabel: { fontSize: 12, color: '#718096' },
     detailValue: { fontSize: 16, fontWeight: '600', color: '#2D3748' },
-
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-    modalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 20 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 20, fontWeight: '700' },
-    label: { fontSize: 14, fontWeight: '600', color: '#4A5568', marginTop: 10, marginBottom: 5 },
-    input: { backgroundColor: '#F7FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 12, fontSize: 16 },
-    saveButton: { backgroundColor: '#3182CE', marginTop: 20, padding: 15, borderRadius: 12, alignItems: 'center' },
-    saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
     prCard: {
         backgroundColor: '#FFFFFF',
@@ -658,15 +458,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
     },
-    row: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 10
-    },
-    halfInput: {
-        width: '48%'
-    },
-    // New Styles for Selector
     selectorContainer: {
         marginBottom: 20,
     },
@@ -690,7 +481,6 @@ const styles = StyleSheet.create({
     selectorTextActive: {
         color: '#fff'
     },
-    // New Styles for Analysis
     analysisContainer: {
         marginTop: 20,
         paddingTop: 15,
@@ -714,4 +504,4 @@ const styles = StyleSheet.create({
     }
 });
 
-export default ProgressScreen;
+export default TrainerClientProgressScreen;

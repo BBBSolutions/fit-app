@@ -87,7 +87,8 @@ serve(async (req) => {
                 goal: p.goal,
                 status: statusMap[p.user_id] || 'Active',
                 image: p.avatar_url,
-                lastActive: 'Unknown',
+                lastActive: p.updated_at || 'Unknown',
+                age: p.age || 'N/A',
                 plan: 'None'
             }));
 

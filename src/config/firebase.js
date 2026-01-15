@@ -1,5 +1,7 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/auth";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { getFirestore } from "firebase/firestore";
 // Import compat for expo-firebase-recaptcha
 import firebase from "firebase/compat/app";
@@ -24,7 +26,17 @@ if (!firebase.apps.length) {
 }
 
 // Initialize services
-const auth = getAuth(app);
+// Use initializeAuth for React Native persistence
+// Initialize services
+let auth;
+if (Platform.OS === 'web') {
+    auth = getAuth(app);
+} else {
+    auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage)
+    });
+}
+
 const db = getFirestore(app);
 
 export { auth, db, firebaseConfig };

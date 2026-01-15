@@ -1,11 +1,13 @@
-import React from 'react';
+import { ChatProvider } from './src/context/ChatContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppNavigator />
+      <ChatProvider>
+        <AppNavigator />
+      </ChatProvider>
     </SafeAreaProvider>
   );
 }

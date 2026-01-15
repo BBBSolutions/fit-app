@@ -61,6 +61,50 @@ serve(async (req) => {
                 .single();
 
             if (error) throw error;
+
+            // --- Push Notification Trigger ---
+            try {
+                // 1. Get Receiver's Push Token
+                const { data: receiverProfile } = await supabaseClient
+                    .from('profiles')
+                    .select('push_token, name')
+                    .eq('user_id', receiverId)
+                    .single();
+
+                if (receiverProfile?.push_token) {
+                    // 2. Get Sender Name (Optional, good for notification body)
+                    const { data: senderProfile } = await supabaseClient
+                        .from('profiles')
+                        .select('name')
+                        .eq('user_id', userId)
+                        .single();
+
+                    const senderName = senderProfile?.name || 'New Message';
+
+                    // 3. Send to Expo
+                    await fetch('https://exp.host/--/api/v2/push/send', {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Accept-encoding': 'gzip, deflate',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            to: receiverProfile.push_token,
+                            sound: 'default',
+                            title: senderName,
+                            body: content,
+                            data: { senderId: userId, screen: 'Messages' }, // Deep link data
+                        }),
+                    });
+                    console.log("Push notification sent to", receiverId);
+                }
+            } catch (notifyError) {
+                console.error("Notification failed:", notifyError);
+                // Don't fail the request if notification fails
+            }
+            // ---------------------------------
+
             return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
@@ -77,6 +121,41 @@ serve(async (req) => {
 
             if (error) throw error;
             return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        // POST /messages/mark-read
+        if (action === 'mark-read' && req.method === 'POST') {
+            const body = await req.json();
+            const { senderId } = body;
+            if (!senderId) throw new Error("Missing senderId");
+
+            const { error } = await supabaseClient
+                .from('messages')
+                .update({ is_read: true })
+                .eq('sender_id', senderId)
+                .eq('receiver_id', userId)
+                .eq('is_read', false);
+
+            if (error) throw error;
+
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        // GET /messages/unread-count
+        if (action === 'unread-count' && req.method === 'GET') {
+            console.log(`Checking unread count for Receiver ID: ${userId}`);
+
+            const { count, error } = await supabaseClient
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', userId)
+                .eq('is_read', false);
+
+            console.log(`Unread count result: ${count}, Error: ${JSON.stringify(error)}`);
+
+            if (error) throw error;
+
+            return new Response(JSON.stringify({ count: count || 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
         throw new Error("Method not allowed");

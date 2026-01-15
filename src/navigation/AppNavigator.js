@@ -11,10 +11,9 @@ import DietLoggingScreen from '../screens/Member/DietLoggingScreen';
 import OnboardingSurvey from '../screens/Member/OnboardingSurvey';
 import TrainerLoginScreen from '../screens/Trainer/TrainerLoginScreen';
 import TrainerOnboardingSurveyScreen from '../screens/Trainer/TrainerOnboardingSurveyScreen';
-import TrainerDashboardScreen from '../screens/Trainer/TrainerDashboardScreen';
-import TrainerClientListScreen from '../screens/Trainer/TrainerClientListScreen';
+import TrainerBottomTabs from './TrainerBottomTabs';
 import TrainerClientDetailsScreen from '../screens/Trainer/TrainerClientDetailsScreen';
-import TrainerChatScreen from '../screens/Trainer/TrainerChatScreen';
+import TrainerClientProgressScreen from '../screens/Trainer/TrainerClientProgressScreen';
 import TrainerDetails from '../screens/Trainer/TrainerDetails';
 import EditWorkoutPlanScreen from '../screens/Shared/EditWorkoutPlanScreen';
 import MemberCreateWorkoutScreen from '../screens/Member/MemberCreateWorkoutScreen';
@@ -51,11 +50,9 @@ const AppNavigator = () => {
                 <Stack.Screen name="OnboardingSurvey" component={OnboardingSurvey} />
                 <Stack.Screen name="TrainerLogin" component={TrainerLoginScreen} />
                 <Stack.Screen name="TrainerOnboarding" component={TrainerOnboardingSurveyScreen} />
-                <Stack.Screen name="TrainerDashboard" component={TrainerDashboardScreen} />
-                <Stack.Screen name="TrainerClientList" component={TrainerClientListScreen} />
+                <Stack.Screen name="TrainerMainApp" component={TrainerBottomTabs} options={{ headerShown: false }} />
                 <Stack.Screen name="TrainerClientDetails" component={TrainerClientDetailsScreen} />
-                <Stack.Screen name="TrainerChat" component={TrainerChatScreen} />
-                <Stack.Screen name="TrainerDetails" component={TrainerDetails} />
+                <Stack.Screen name="TrainerClientProgress" component={TrainerClientProgressScreen} />
                 <Stack.Screen name="Messages" component={MessagesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
                 <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
