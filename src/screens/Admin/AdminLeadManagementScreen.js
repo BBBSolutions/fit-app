@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { adminApi } from '../../services/adminApi';
 
 const AdminLeadManagementScreen = ({ navigation }) => {
     const [selectedLead, setSelectedLead] = useState(null);
@@ -10,33 +11,66 @@ const AdminLeadManagementScreen = ({ navigation }) => {
     const [filterStatus, setFilterStatus] = useState('All');
     const [filterSource, setFilterSource] = useState('All');
 
-    const [leads, setLeads] = useState([
-        { id: '1', name: 'John Smith', phone: '+1 555-0123', email: 'john@email.com', source: 'Website', trainer: 'Mike Johnson', status: 'New', lastActivity: '2024-01-15', score: 85 },
-        { id: '2', name: 'Sarah Williams', phone: '+1 555-0124', email: 'sarah@email.com', source: 'Instagram', trainer: 'Lisa Chen', status: 'Contacted', lastActivity: '2024-01-14', score: 72 },
-        { id: '3', name: 'Mike Brown', phone: '+1 555-0125', email: 'mike@email.com', source: 'Walk-in', trainer: 'Unassigned', status: 'Follow-up', lastActivity: '2024-01-13', score: 90 },
-        { id: '4', name: 'Emma Davis', phone: '+1 555-0126', email: 'emma@email.com', source: 'Referral', trainer: 'Mike Johnson', status: 'Trial Booked', lastActivity: '2024-01-12', score: 95 },
-    ]);
+    const [leads, setLeads] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
-    const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', source: 'Website', trainer: 'Unassigned', status: 'New', notes: '' });
+    // New Lead State
+    const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '' });
+
+    // Automations (Local preferences for now)
     const [automations, setAutomations] = useState({ welcome: true, autoAssign: false, followUp: true, scoring: true });
 
+    useEffect(() => {
+        fetchLeads();
+    }, []);
+
+    const fetchLeads = async () => {
+        setIsLoading(true);
+        try {
+            const data = await adminApi.getLeads();
+            setLeads(data || []);
+        } catch (error) {
+            console.error("Failed to fetch leads:", error);
+            // Alert.alert("Error", "Failed to load leads");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAddLead = async () => {
+        if (!newLead.name || !newLead.phone) {
+            Alert.alert("Error", "Name and Phone are required.");
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+            const createdLead = await adminApi.createLead(newLead);
+            setLeads([createdLead, ...leads]);
+            setAddLeadModalVisible(false);
+            setNewLead({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '' });
+            Alert.alert("Success", "Lead added successfully");
+        } catch (error) {
+            Alert.alert("Error", "Failed to add lead");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Calculate funnel counts dynamically from real data
+    const getStageCount = (status) => leads.filter(l => l.status === status).length;
+
     const funnelStages = [
-        { name: 'New Inquiries', count: 24, conversion: '100%', color: '#3182CE' },
-        { name: 'Contacted', count: 18, conversion: '75%', color: '#805AD5' },
-        { name: 'Follow-up', count: 12, conversion: '50%', color: '#D69E2E' },
-        { name: 'Trial Booked', count: 8, conversion: '33%', color: '#38A169' },
-        { name: 'Converted', count: 5, conversion: '21%', color: '#22543D' },
+        { name: 'New Inquiries', count: getStageCount('New'), conversion: '-', color: '#3182CE' },
+        { name: 'Contacted', count: getStageCount('Contacted'), conversion: '-', color: '#805AD5' },
+        { name: 'Follow-up', count: getStageCount('Follow-up'), conversion: '-', color: '#D69E2E' },
+        { name: 'Trial Booked', count: getStageCount('Trial Booked'), conversion: '-', color: '#38A169' },
+        { name: 'Converted', count: getStageCount('Converted'), conversion: '-', color: '#22543D' },
     ];
 
     const handleLeadClick = (lead) => {
         setSelectedLead(lead);
         setDetailsPanelVisible(true);
-    };
-
-    const handleAddLead = () => {
-        setLeads([...leads, { ...newLead, id: Date.now().toString(), lastActivity: new Date().toISOString().split('T')[0], score: 50 }]);
-        setAddLeadModalVisible(false);
-        setNewLead({ name: '', phone: '', email: '', source: 'Website', trainer: 'Unassigned', status: 'New', notes: '' });
     };
 
     const getStatusColor = (status) => {
@@ -45,10 +79,9 @@ const AdminLeadManagementScreen = ({ navigation }) => {
     };
 
     const filteredLeads = leads.filter(lead => {
-        const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) || lead.phone.includes(searchQuery);
+        const matchesSearch = (lead.name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) || (lead.phone || '').includes(searchQuery);
         const matchesStatus = filterStatus === 'All' || lead.status === filterStatus;
-        const matchesSource = filterSource === 'All' || lead.source === filterSource;
-        return matchesSearch && matchesStatus && matchesSource;
+        return matchesSearch && matchesStatus;
     });
 
     return (
@@ -61,9 +94,9 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                         <Text style={styles.pageSubtitle}>Track inquiries, manage follow-ups, and convert leads to members.</Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
-                        <TouchableOpacity style={styles.outlineButton}>
-                            <Ionicons name="cloud-upload-outline" size={18} color="#4A5568" />
-                            <Text style={styles.outlineButtonText}>Import</Text>
+                        <TouchableOpacity style={styles.outlineButton} onPress={fetchLeads}>
+                            <Ionicons name="refresh" size={18} color="#4A5568" />
+                            <Text style={styles.outlineButtonText}>Refresh</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.primaryButton} onPress={() => setAddLeadModalVisible(true)}>
                             <Ionicons name="add" size={20} color="#FFF" />
@@ -118,29 +151,36 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Source</Text>
                         <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Trainer</Text>
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Status</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Score</Text>
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Actions</Text>
                     </View>
-                    {filteredLeads.map(lead => (
+                    {isLoading ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color="#3182CE" />
+                            <Text style={{ marginTop: 16, color: '#718096' }}>Loading leads...</Text>
+                        </View>
+                    ) : filteredLeads.length === 0 ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <Ionicons name="funnel-outline" size={48} color="#CBD5E0" />
+                            <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>No leads found.</Text>
+                            <Text style={{ color: '#A0AEC0', fontSize: 14 }}>Add a lead to get started.</Text>
+                        </View>
+                    ) : filteredLeads.map(lead => (
                         <TouchableOpacity key={lead.id} style={styles.tableRow} onPress={() => handleLeadClick(lead)}>
-                            <Text style={[styles.tableCell, { flex: 2, fontWeight: lead.score > 80 ? 'bold' : '500' }]}>{lead.name}</Text>
+                            <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{lead.name}</Text>
                             <View style={[styles.tableCell, { flex: 2 }]}>
                                 <Text style={{ fontSize: 13, color: '#2D3748' }}>{lead.phone}</Text>
                                 <Text style={{ fontSize: 12, color: '#718096' }}>{lead.email}</Text>
                             </View>
                             <Text style={[styles.tableCell, { flex: 1 }]}>{lead.source}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.5, color: lead.trainer === 'Unassigned' ? '#E53E3E' : '#2D3748' }]}>{lead.trainer}</Text>
+                            <Text style={[styles.tableCell, { flex: 1.5, color: '#718096' }]}>Unassigned</Text>
+                            {/* Trainer column: Hardcoded for now as DB doesn't have trainer_id yet */}
+
                             <View style={[styles.tableCell, { flex: 1 }]}>
                                 <View style={[styles.statusChip, { backgroundColor: getStatusColor(lead.status) + '20' }]}>
                                     <Text style={[styles.statusChipText, { color: getStatusColor(lead.status) }]}>{lead.status}</Text>
                                 </View>
                             </View>
-                            <View style={[styles.tableCell, { flex: 1 }]}>
-                                <View style={styles.scoreBar}>
-                                    <View style={[styles.scoreFill, { width: `${lead.score}%`, backgroundColor: lead.score > 80 ? '#38A169' : lead.score > 50 ? '#D69E2E' : '#718096' }]} />
-                                    <Text style={styles.scoreText}>{lead.score}</Text>
-                                </View>
-                            </View>
+
                             <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', gap: 8 }]}>
                                 <TouchableOpacity onPress={() => handleLeadClick(lead)}>
                                     <Ionicons name="eye-outline" size={18} color="#3182CE" />
@@ -153,20 +193,23 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                     ))}
                 </View>
 
-                {/* Analytics */}
+                {/* Analytics - Partially Dynamic */}
                 <View style={styles.analyticsGrid}>
                     <View style={styles.analyticsCard}>
                         <Text style={styles.analyticsTitle}>Leads by Source</Text>
                         <View style={styles.analyticsContent}>
-                            {['Website', 'Instagram', 'Walk-in', 'Referral'].map(source => (
-                                <View key={source} style={styles.analyticsRow}>
-                                    <Text style={styles.analyticsLabel}>{source}</Text>
-                                    <View style={styles.analyticsBarContainer}>
-                                        <View style={[styles.analyticsBar, { width: `${Math.random() * 100}%` }]} />
+                            {['Website', 'Instagram', 'Walk-in', 'Referral'].map(source => {
+                                const count = leads.filter(l => l.source === source).length;
+                                return (
+                                    <View key={source} style={styles.analyticsRow}>
+                                        <Text style={styles.analyticsLabel}>{source}</Text>
+                                        <View style={styles.analyticsBarContainer}>
+                                            <View style={[styles.analyticsBar, { width: `${(count / (leads.length || 1)) * 100}%` }]} />
+                                        </View>
+                                        <Text style={styles.analyticsValue}>{count}</Text>
                                     </View>
-                                    <Text style={styles.analyticsValue}>{Math.floor(Math.random() * 50)}</Text>
-                                </View>
-                            ))}
+                                );
+                            })}
                         </View>
                     </View>
                     <View style={styles.analyticsCard}>
@@ -176,31 +219,20 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                 <Text style={styles.automationLabel}>Auto-send welcome message</Text>
                                 <Switch value={automations.welcome} onValueChange={v => setAutomations({ ...automations, welcome: v })} />
                             </View>
+                            {/* Other automations can remain mock/local for now as they are features not data */}
                             <View style={styles.automationRow}>
                                 <Text style={styles.automationLabel}>Auto-assign trainer</Text>
                                 <Switch value={automations.autoAssign} onValueChange={v => setAutomations({ ...automations, autoAssign: v })} />
-                            </View>
-                            <View style={styles.automationRow}>
-                                <Text style={styles.automationLabel}>Auto-create follow-ups</Text>
-                                <Switch value={automations.followUp} onValueChange={v => setAutomations({ ...automations, followUp: v })} />
-                            </View>
-                            <View style={styles.automationRow}>
-                                <Text style={styles.automationLabel}>Auto-score leads</Text>
-                                <Switch value={automations.scoring} onValueChange={v => setAutomations({ ...automations, scoring: v })} />
                             </View>
                         </View>
                     </View>
                 </View>
 
-                {/* Export Tools */}
+                {/* Export Tools - Visual Only */}
                 <View style={styles.toolsRow}>
                     <TouchableOpacity style={styles.toolButton}>
                         <Ionicons name="download-outline" size={18} color="#4A5568" />
                         <Text style={styles.toolButtonText}>Export CSV</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.toolButton}>
-                        <Ionicons name="document-text-outline" size={18} color="#4A5568" />
-                        <Text style={styles.toolButtonText}>Download Report</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.toolButton}>
                         <Ionicons name="refresh-outline" size={18} color="#4A5568" />
@@ -233,21 +265,19 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                         <Text style={styles.panelValue}>{selectedLead.email}</Text>
                                         <Text style={styles.panelLabel}>Source</Text>
                                         <Text style={styles.panelValue}>{selectedLead.source}</Text>
-                                        <Text style={styles.panelLabel}>Lead Score</Text>
-                                        <Text style={[styles.panelValue, { fontSize: 24, fontWeight: 'bold', color: '#3182CE' }]}>{selectedLead.score}/100</Text>
+                                        <Text style={styles.panelLabel}>Notes</Text>
+                                        <Text style={styles.panelValue}>{selectedLead.notes || 'No notes'}</Text>
                                     </View>
 
                                     <View style={styles.panelSection}>
                                         <Text style={styles.panelSectionTitle}>Activity Timeline</Text>
-                                        {['Inquiry created', 'Contacted via phone', 'Follow-up scheduled', 'Trainer assigned'].map((activity, i) => (
-                                            <View key={i} style={styles.timelineItem}>
-                                                <View style={styles.timelineDot} />
-                                                <View style={styles.timelineContent}>
-                                                    <Text style={styles.timelineText}>{activity}</Text>
-                                                    <Text style={styles.timelineTime}>{selectedLead.lastActivity}</Text>
-                                                </View>
+                                        <View style={styles.timelineItem}>
+                                            <View style={styles.timelineDot} />
+                                            <View style={styles.timelineContent}>
+                                                <Text style={styles.timelineText}>Lead Created</Text>
+                                                <Text style={styles.timelineTime}>{new Date(selectedLead.created_at).toLocaleDateString()}</Text>
                                             </View>
-                                        ))}
+                                        </View>
                                     </View>
 
                                     <View style={styles.panelActions}>
@@ -300,7 +330,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.saveButton} onPress={handleAddLead}>
-                                <Text style={styles.saveButtonText}>Add Lead</Text>
+                                {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Add Lead</Text>}
                             </TouchableOpacity>
                         </View>
                     </ScrollView>

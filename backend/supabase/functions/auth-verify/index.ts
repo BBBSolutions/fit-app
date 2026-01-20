@@ -18,7 +18,7 @@ serve(async (req) => {
     // We will verify via a simple fetch to Google's public keys or assume client sends valid token 
     // AND verify strictly against Google's tokeninfo endpoint for MVP security.
     // Production should use a proper JWT library with cached Google certs.
-    
+
     // Using Google's tokeninfo endpoint (Not recommended for high throughput but works for MVP/Analysis)
     const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
       method: "POST",
@@ -53,7 +53,7 @@ serve(async (req) => {
       // Update last seen
       await supabaseClient.from('app_users').update({ last_seen: new Date() }).eq('id', internalId);
     } else {
-      // Create new user
+      // Create new user (Internal Map)
       const { data: newUser, error: createError } = await supabaseClient
         .from('app_users')
         .insert({
@@ -62,20 +62,57 @@ serve(async (req) => {
         })
         .select('id')
         .single();
-      
+
       if (createError) throw createError;
       internalId = newUser.id;
 
-      // Create empty profile
-      await supabaseClient.from('profiles').insert({
+      // CHECK FOR INVITATIONS
+      // We check by Phone (if available) or Email
+      let matchedInvite = null;
+
+      // Construct query: gym_code is not known yet, searching global invitations?
+      // Yes, invitations are unique by phone/email ideally.
+
+      // Note: firebaseUser.phoneNumber often comes as +1234567890
+      const phone = firebaseUser.phoneNumber;
+
+      let inviteQuery = supabaseClient.from('invitations').select('*').eq('status', 'pending');
+
+      if (phone && email) {
+        inviteQuery = inviteQuery.or(`phone.eq.${phone},email.eq.${email}`);
+      } else if (phone) {
+        inviteQuery = inviteQuery.eq('phone', phone);
+      } else if (email) {
+        inviteQuery = inviteQuery.eq('email', email);
+      }
+
+      const { data: invites } = await inviteQuery;
+      // Take the most recent one if multiple (rare)
+      matchedInvite = invites && invites.length > 0 ? invites[0] : null;
+
+      const profileData = {
         user_id: internalId,
-        email: email // if we want to store it there too, though redundant
-      });
+        email: email,
+        full_name: matchedInvite ? matchedInvite.name : null,
+        gym_code: matchedInvite ? matchedInvite.gym_code : null,
+        role: matchedInvite ? matchedInvite.role : 'member' // Default to member if no invite
+      };
+
+      // Create profile
+      await supabaseClient.from('profiles').insert(profileData);
+
+      // If invite matched, mark as accepted
+      if (matchedInvite) {
+        await supabaseClient
+          .from('invitations')
+          .update({ status: 'accepted', updated_at: new Date() })
+          .eq('id', matchedInvite.id);
+      }
     }
 
     return new Response(
-      JSON.stringify({ 
-        user_id: internalId, 
+      JSON.stringify({
+        user_id: internalId,
         firebase_uid: uid,
         status: "authenticated"
       }),

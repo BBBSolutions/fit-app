@@ -23,6 +23,7 @@ import AdminUserOnboardingScreen from '../screens/Admin/AdminUserOnboardingScree
 import AdminBillingScreen from '../screens/Admin/AdminBillingScreen';
 import AdminAnalyticsScreen from '../screens/Admin/AdminAnalyticsScreen';
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
+import AdminLoginScreen from '../screens/Admin/AdminLoginScreen';
 import AdminSettingsScreen from '../screens/Admin/AdminSettingsScreen';
 import AdminContentManagerScreen from '../screens/Admin/AdminContentManagerScreen';
 import AdminLeadManagementScreen from '../screens/Admin/AdminLeadManagementScreen';
@@ -37,10 +38,15 @@ import SuperAdminSystemLogsScreen from '../screens/SuperAdmin/SuperAdminSystemLo
 
 const Stack = createNativeStackNavigator();
 
+import WelcomeScreen from '../screens/Shared/WelcomeScreen';
+import GymOwnerSignupScreen from '../screens/Admin/GymOwnerSignupScreen';
+
 const AppNavigator = () => {
     return (
         <NavigationContainer>
-            <Stack.Navigator initialRouteName="GymCode">
+            <Stack.Navigator initialRouteName="Welcome">
+                <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
+                <Stack.Screen name="GymOwnerSignup" component={GymOwnerSignupScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="GymCode" component={GymCodeScreen} />
                 <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="MemberLogin" component={MemberLoginScreen} />
@@ -57,6 +63,7 @@ const AppNavigator = () => {
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
                 <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
                 <Stack.Screen name="WorkoutResults" component={require('../screens/Member/WorkoutResultsScreen').default} />
+                <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
                 <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
                 <Stack.Screen name="AdminBranding" component={AdminBrandingScreen} />
                 <Stack.Screen name="AdminUserOnboarding" component={AdminUserOnboardingScreen} />

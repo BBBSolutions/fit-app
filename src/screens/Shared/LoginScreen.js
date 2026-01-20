@@ -17,7 +17,7 @@ const LoginScreen = ({ navigation }) => {
             />
             <Button
                 title="Login as Admin"
-                onPress={() => navigation.navigate('AdminDashboard')}
+                onPress={() => navigation.navigate('AdminLogin')}
                 color="#805AD5"
             />
         </View>

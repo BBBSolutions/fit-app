@@ -1,51 +1,107 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { adminApi } from '../../services/adminApi';
 
 const AdminContentManagerScreen = ({ navigation }) => {
     const [activeTab, setActiveTab] = useState('All Content');
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('All');
     const [editorVisible, setEditorVisible] = useState(false);
-    const [bannerModalVisible, setBannerModalVisible] = useState(false);
+    const [bannerModalVisible, setBannerModalVisible] = useState(false); // Unused in original but kept for layout preservation if needed
     const [currentContent, setCurrentContent] = useState(null);
 
-    const [contentItems, setContentItems] = useState([
-        { id: '1', title: 'Welcome to FitPlatform', type: 'Page', status: 'Published', updated: '2024-01-15', author: 'Admin', thumbnail: '📄' },
-        { id: '2', title: 'Spring Fitness Challenge', type: 'Article', status: 'Published', updated: '2024-01-10', author: 'Admin', thumbnail: '📝' },
-        { id: '3', title: 'New Year Promotion', type: 'Announcement', status: 'Published', updated: '2024-01-01', author: 'Admin', thumbnail: '📢' },
-        { id: '4', title: 'Hero Banner - Join Now', type: 'Banner', status: 'Published', updated: '2023-12-28', author: 'Admin', thumbnail: '🖼️' },
-        { id: '5', title: 'HIIT Workout Guide', type: 'Workout Guide', status: 'Draft', updated: '2023-12-20', author: 'Trainer', thumbnail: '💪' },
-        { id: '6', title: 'Privacy Policy', type: 'Legal', status: 'Published', updated: '2023-12-01', author: 'Admin', thumbnail: '⚖️' },
-    ]);
+    const [contentItems, setContentItems] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const tabs = ['All Content', 'Pages', 'Articles', 'Announcements', 'Banners', 'Legal', 'Workout Guides'];
 
+    useEffect(() => {
+        fetchContent();
+    }, []);
+
+    const fetchContent = async () => {
+        setIsLoading(true);
+        try {
+            const data = await adminApi.getContent();
+            setContentItems(data || []);
+        } catch (error) {
+            console.error("Failed to fetch content:", error);
+            // Alert.alert("Error", "Failed to load content");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleNewContent = () => {
-        setCurrentContent({ title: '', type: 'Page', status: 'Draft', content: '', tags: [], metaTitle: '', metaDescription: '', slug: '' });
+        setCurrentContent({ title: '', type: 'Page', status: 'Draft', body: '', tags: [], meta_title: '', meta_description: '', slug: '' });
         setEditorVisible(true);
     };
 
     const handleEditContent = (item) => {
-        setCurrentContent({ ...item, content: '', tags: [], metaTitle: '', metaDescription: '', slug: '' });
+        // Map backend fields to editor state if needed, mostly 1:1 match expected
+        setCurrentContent({
+            ...item,
+            body: item.body || '', // backend uses 'body', frontend mock used 'content' sometimes but let's standardize on 'body'
+            meta_title: item.meta_title || '',
+            meta_description: item.meta_description || ''
+        });
         setEditorVisible(true);
     };
 
-    const handleSaveContent = () => {
-        if (currentContent.id) {
-            setContentItems(contentItems.map(item => item.id === currentContent.id ? { ...item, ...currentContent } : item));
-        } else {
-            setContentItems([...contentItems, { ...currentContent, id: Date.now().toString(), updated: new Date().toISOString().split('T')[0], author: 'Admin' }]);
+    const handleSaveContent = async () => {
+        if (!currentContent.title) {
+            Alert.alert("Error", "Title is required");
+            return;
         }
-        setEditorVisible(false);
+
+        setIsLoading(true);
+        try {
+            if (currentContent.id) {
+                // Update
+                const updated = await adminApi.updateContent(currentContent);
+                setContentItems(contentItems.map(item => item.id === updated.id ? updated : item));
+            } else {
+                // Create
+                const created = await adminApi.createContent(currentContent);
+                setContentItems([created, ...contentItems]);
+            }
+            setEditorVisible(false);
+            Alert.alert("Success", "Content saved successfully");
+        } catch (error) {
+            Alert.alert("Error", "Failed to save content");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleDeleteContent = (id) => {
-        setContentItems(contentItems.filter(item => item.id !== id));
+    const handleDeleteContent = async (id) => {
+        Alert.alert(
+            "Delete Content",
+            "Are you sure you want to delete this item?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setIsLoading(true);
+                            await adminApi.deleteContent(id);
+                            setContentItems(contentItems.filter(item => item.id !== id));
+                        } catch (error) {
+                            Alert.alert("Error", "Failed to delete content");
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const filteredContent = contentItems.filter(item => {
-        const matchesTab = activeTab === 'All Content' || item.type === activeTab.slice(0, -1) || (activeTab === 'Workout Guides' && item.type === 'Workout Guide');
+        const matchesTab = activeTab === 'All Content' || item.type === activeTab.slice(0, -1) || (activeTab === 'Workout Guides' && item.type === 'Workout Guide'); // Simple plural stripping logic
         const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesFilter = filterStatus === 'All' || item.status === filterStatus;
         return matchesTab && matchesSearch && matchesFilter;
@@ -60,10 +116,16 @@ const AdminContentManagerScreen = ({ navigation }) => {
                         <Text style={styles.pageTitle}>Content Manager</Text>
                         <Text style={styles.pageSubtitle}>Create, edit, and organize app content.</Text>
                     </View>
-                    <TouchableOpacity style={styles.primaryButton} onPress={handleNewContent}>
-                        <Ionicons name="add" size={20} color="#FFF" />
-                        <Text style={styles.primaryButtonText}>New Content</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <TouchableOpacity style={styles.outlineButton} onPress={fetchContent}>
+                            <Ionicons name="refresh" size={18} color="#4A5568" />
+                            <Text style={styles.outlineButtonText}>Refresh</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.primaryButton} onPress={handleNewContent}>
+                            <Ionicons name="add" size={20} color="#FFF" />
+                            <Text style={styles.primaryButtonText}>New Content</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Tabs */}
@@ -129,9 +191,20 @@ const AdminContentManagerScreen = ({ navigation }) => {
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Updated</Text>
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Actions</Text>
                     </View>
-                    {filteredContent.map(item => (
+                    {isLoading ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color="#3182CE" />
+                            <Text style={{ marginTop: 16, color: '#718096' }}>Loading content...</Text>
+                        </View>
+                    ) : filteredContent.length === 0 ? (
+                        <View style={{ padding: 40, alignItems: 'center' }}>
+                            <Ionicons name="document-text-outline" size={48} color="#CBD5E0" />
+                            <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>No content found.</Text>
+                            <Text style={{ color: '#A0AEC0', fontSize: 14 }}>Create new content to get started.</Text>
+                        </View>
+                    ) : filteredContent.map(item => (
                         <View key={item.id} style={styles.tableRow}>
-                            <Text style={[styles.tableCell, { flex: 0.5, fontSize: 24 }]}>{item.thumbnail}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.5, fontSize: 24 }]}>{item.type === 'Article' ? '📝' : item.type === 'Banner' ? '🖼️' : '📄'}</Text>
                             <Text style={[styles.tableCell, { flex: 2, fontWeight: '600' }]}>{item.title}</Text>
                             <Text style={[styles.tableCell, { flex: 1 }]}>{item.type}</Text>
                             <View style={[styles.tableCell, { flex: 1 }]}>
@@ -141,7 +214,7 @@ const AdminContentManagerScreen = ({ navigation }) => {
                                     </Text>
                                 </View>
                             </View>
-                            <Text style={[styles.tableCell, { flex: 1, color: '#718096' }]}>{item.updated}</Text>
+                            <Text style={[styles.tableCell, { flex: 1, color: '#718096' }]}>{new Date(item.updated_at).toLocaleDateString()}</Text>
                             <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', gap: 8 }]}>
                                 <TouchableOpacity onPress={() => handleEditContent(item)}>
                                     <Ionicons name="create-outline" size={18} color="#3182CE" />
@@ -157,7 +230,7 @@ const AdminContentManagerScreen = ({ navigation }) => {
                     ))}
                 </View>
 
-                {/* Static Pages */}
+                {/* Static Pages - Keep these as links or integrate later if table content supports 'Static Page' type */}
                 <View style={styles.sectionCard}>
                     <Text style={styles.sectionTitle}>Static Pages</Text>
                     {['Terms & Conditions', 'Privacy Policy', 'Refund Policy', 'About', 'Contact'].map((page, i) => (
@@ -209,28 +282,28 @@ const AdminContentManagerScreen = ({ navigation }) => {
                             ))}
                         </View>
 
-                        <Text style={styles.label}>Content</Text>
+                        <Text style={styles.label}>Content Body</Text>
                         <TextInput
                             style={[styles.input, styles.textArea]}
                             multiline
                             numberOfLines={10}
-                            value={currentContent?.content}
-                            onChangeText={t => setCurrentContent({ ...currentContent, content: t })}
+                            value={currentContent?.body}
+                            onChangeText={t => setCurrentContent({ ...currentContent, body: t })}
                             placeholder="Write your content here..."
                         />
 
                         <Text style={styles.label}>SEO Meta Title</Text>
                         <TextInput
                             style={styles.input}
-                            value={currentContent?.metaTitle}
-                            onChangeText={t => setCurrentContent({ ...currentContent, metaTitle: t })}
+                            value={currentContent?.meta_title}
+                            onChangeText={t => setCurrentContent({ ...currentContent, meta_title: t })}
                         />
 
                         <Text style={styles.label}>SEO Meta Description</Text>
                         <TextInput
                             style={styles.input}
-                            value={currentContent?.metaDescription}
-                            onChangeText={t => setCurrentContent({ ...currentContent, metaDescription: t })}
+                            value={currentContent?.meta_description}
+                            onChangeText={t => setCurrentContent({ ...currentContent, meta_description: t })}
                         />
 
                         <View style={styles.statusRow}>
@@ -246,7 +319,7 @@ const AdminContentManagerScreen = ({ navigation }) => {
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.saveModalButton} onPress={handleSaveContent}>
-                                <Text style={styles.saveModalButtonText}>Save Content</Text>
+                                {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveModalButtonText}>Save Content</Text>}
                             </TouchableOpacity>
                         </View>
                     </ScrollView>

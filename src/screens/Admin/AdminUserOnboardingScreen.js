@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Image, Platform, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Image, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import { adminApi } from '../../services/adminApi';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 const AdminUserOnboardingScreen = ({ navigation }) => {
-    const [users, setUsers] = useState([
-        { id: '1', name: 'John Doe', phone: '555-0101', role: 'Member', gymId: 'GYM001', assignedTrainer: 'Sarah Smith', status: 'Active' },
-        { id: '2', name: 'Jane Roe', phone: '555-0102', role: 'Trainer', gymId: 'GYM001', assignedTrainer: '-', status: 'Active' },
-        { id: '3', name: 'Mike Jones', phone: '555-0103', role: 'Member', gymId: 'GYM001', assignedTrainer: 'Jane Roe', status: 'Pending' },
-    ]);
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState('All');
     const [modalVisible, setModalVisible] = useState(false);
@@ -19,10 +17,39 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
     const [inviteRole, setInviteRole] = useState('Member');
     const [generatedLinks, setGeneratedLinks] = useState([]);
 
+    React.useEffect(() => {
+        fetchUsers();
+    }, []);
+
+    const fetchUsers = async () => {
+        setLoading(true);
+        try {
+            const data = await adminApi.getUsers();
+            if (Array.isArray(data)) {
+                // Map backend fields to frontend model if needed
+                const mappedUsers = data.map(u => ({
+                    id: u.id,
+                    name: u.full_name || 'No Name',
+                    phone: u.phone_number || '-',
+                    role: u.role || 'Member',
+                    gymId: u.gym_code || '-',
+                    assignedTrainer: '-', // Relationship not yet fetched
+                    status: 'Active' // Default to Active for now
+                }));
+                setUsers(mappedUsers);
+            }
+        } catch (error) {
+            console.error("Failed to fetch users:", error);
+            // setUsers([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Stats
-    const totalMembers = users.filter(u => u.role === 'Member').length;
-    const totalTrainers = users.filter(u => u.role === 'Trainer').length;
-    const pendingInvites = users.filter(u => u.status === 'Pending').length;
+    const totalMembers = users.filter(u => u.role === 'Member' || u.role === 'member').length;
+    const totalTrainers = users.filter(u => u.role === 'Trainer' || u.role === 'trainer').length;
+    const pendingInvites = 0; // users.filter(u => u.status === 'Pending').length;
 
     const handleAddUser = () => {
         setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '' });
@@ -34,24 +61,57 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
         setModalVisible(true);
     };
 
-    const handleDeleteUser = (id) => {
-        if (confirm('Are you sure you want to delete this user?')) {
-            setUsers(users.filter(u => u.id !== id));
+    const handleDeleteUser = async (id) => {
+        if (confirm('Are you sure you want to remove this user from the gym?')) {
+            try {
+                await adminApi.deleteUser(id);
+                setUsers(users.filter(u => u.id !== id));
+            } catch (error) {
+                alert('Failed to delete user');
+                console.error(error);
+            }
         }
     };
 
-    const handleSaveUser = () => {
-        if (!currentUser.name || !currentUser.phone) {
+    const handleSaveUser = async () => {
+        if (!currentUser.name) { // Phone is optional in some cases, but check required fields
             alert('Please fill in required fields');
             return;
         }
 
-        if (currentUser.id) {
-            setUsers(users.map(u => u.id === currentUser.id ? currentUser : u));
-        } else {
-            setUsers([...users, { ...currentUser, id: Date.now().toString(), status: 'Pending', gymId: 'GYM001' }]);
+        setLoading(true);
+        try {
+            if (currentUser.id) {
+                // Edit / Update
+                await adminApi.updateUser({
+                    id: currentUser.id,
+                    name: currentUser.name,
+                    phone: currentUser.phone,
+                    role: currentUser.role
+                });
+
+                // Refresh list locally or fetch
+                setUsers(users.map(u => u.id === currentUser.id ? { ...u, ...currentUser } : u));
+            } else {
+                // Create New User (Invitation)
+                await adminApi.createUser({
+                    name: currentUser.name,
+                    phone: currentUser.phone,
+                    email: currentUser.email,
+                    role: currentUser.role
+                });
+
+                // Refresh list from backend (which now includes the pending user)
+                await fetchUsers();
+
+                Alert.alert("Success", "User added. They will appear as 'Pending' until they sign in.");
+            }
+            setModalVisible(false);
+        } catch (error) {
+            Alert.alert('Error', error.message || 'Failed to save user');
+        } finally {
+            setLoading(false);
         }
-        setModalVisible(false);
     };
 
     const generateInviteLink = () => {
@@ -232,46 +292,61 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                     </View>
 
                     <View style={styles.tableContainer}>
-                        <View style={styles.tableRowHeader}>
-                            <Text style={[styles.tableCell, styles.colAvatar]}></Text>
-                            <Text style={[styles.tableCell, styles.colName, styles.headerText]}>Full Name</Text>
-                            <Text style={[styles.tableCell, styles.colPhone, styles.headerText]}>Phone</Text>
-                            <Text style={[styles.tableCell, styles.colRole, styles.headerText]}>Role</Text>
-                            <Text style={[styles.tableCell, styles.colGymId, styles.headerText]}>Gym ID</Text>
-                            <Text style={[styles.tableCell, styles.colTrainer, styles.headerText]}>Assigned Trainer</Text>
-                            <Text style={[styles.tableCell, styles.colStatus, styles.headerText]}>Status</Text>
-                            <Text style={[styles.tableCell, styles.colActions, styles.headerText]}>Actions</Text>
-                        </View>
-                        {filteredUsers.map(user => (
-                            <View key={user.id} style={styles.tableRow}>
-                                <View style={[styles.tableCell, styles.colAvatar]}>
-                                    <View style={styles.avatarPlaceholder}>
-                                        <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
-                                    </View>
-                                </View>
-                                <Text style={[styles.tableCell, styles.colName]}>{user.name}</Text>
-                                <Text style={[styles.tableCell, styles.colPhone]}>{user.phone}</Text>
-                                <View style={[styles.tableCell, styles.colRole]}>
-                                    <View style={[styles.badge, user.role === 'Trainer' ? styles.badgeTrainer : styles.badgeMember]}>
-                                        <Text style={[styles.badgeText, user.role === 'Trainer' ? styles.badgeTextTrainer : styles.badgeTextMember]}>{user.role}</Text>
-                                    </View>
-                                </View>
-                                <Text style={[styles.tableCell, styles.colGymId]}>{user.gymId}</Text>
-                                <Text style={[styles.tableCell, styles.colTrainer]}>{user.assignedTrainer}</Text>
-                                <View style={[styles.tableCell, styles.colStatus]}>
-                                    <View style={[styles.statusDot, user.status === 'Active' ? styles.statusActive : styles.statusPending]} />
-                                    <Text style={styles.statusText}>{user.status}</Text>
-                                </View>
-                                <View style={[styles.tableCell, styles.colActions]}>
-                                    <TouchableOpacity onPress={() => handleEditUser(user)} style={styles.actionButton}>
-                                        <Ionicons name="create-outline" size={18} color="#4A5568" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => handleDeleteUser(user.id)} style={styles.actionButton}>
-                                        <Ionicons name="trash-outline" size={18} color="#E53E3E" />
-                                    </TouchableOpacity>
-                                </View>
+                        {loading ? (
+                            <View style={{ padding: 20, alignItems: 'center' }}>
+                                <ActivityIndicator size="large" color="#3182CE" />
+                                <Text style={{ marginTop: 10, color: '#718096' }}>Loading users...</Text>
                             </View>
-                        ))}
+                        ) : filteredUsers.length === 0 ? (
+                            <View style={{ padding: 40, alignItems: 'center', backgroundColor: '#FFF' }}>
+                                <Ionicons name="people-outline" size={48} color="#CBD5E0" />
+                                <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>No users found.</Text>
+                                <Text style={{ color: '#A0AEC0', fontSize: 14 }}>Try adding a new user or inviting active members.</Text>
+                            </View>
+                        ) : (
+                            <View>
+                                <View style={styles.tableRowHeader}>
+                                    <Text style={[styles.tableCell, styles.colAvatar]}></Text>
+                                    <Text style={[styles.tableCell, styles.colName, styles.headerText]}>Full Name</Text>
+                                    <Text style={[styles.tableCell, styles.colPhone, styles.headerText]}>Phone</Text>
+                                    <Text style={[styles.tableCell, styles.colRole, styles.headerText]}>Role</Text>
+                                    <Text style={[styles.tableCell, styles.colGymId, styles.headerText]}>Gym ID</Text>
+                                    <Text style={[styles.tableCell, styles.colTrainer, styles.headerText]}>Assigned Trainer</Text>
+                                    <Text style={[styles.tableCell, styles.colStatus, styles.headerText]}>Status</Text>
+                                    <Text style={[styles.tableCell, styles.colActions, styles.headerText]}>Actions</Text>
+                                </View>
+                                {filteredUsers.map(user => (
+                                    <View key={user.id} style={styles.tableRow}>
+                                        <View style={[styles.tableCell, styles.colAvatar]}>
+                                            <View style={styles.avatarPlaceholder}>
+                                                <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+                                            </View>
+                                        </View>
+                                        <Text style={[styles.tableCell, styles.colName]}>{user.name}</Text>
+                                        <Text style={[styles.tableCell, styles.colPhone]}>{user.phone}</Text>
+                                        <View style={[styles.tableCell, styles.colRole]}>
+                                            <View style={[styles.badge, user.role === 'Trainer' ? styles.badgeTrainer : styles.badgeMember]}>
+                                                <Text style={[styles.badgeText, user.role === 'Trainer' ? styles.badgeTextTrainer : styles.badgeTextMember]}>{user.role}</Text>
+                                            </View>
+                                        </View>
+                                        <Text style={[styles.tableCell, styles.colGymId]}>{user.gymId}</Text>
+                                        <Text style={[styles.tableCell, styles.colTrainer]}>{user.assignedTrainer}</Text>
+                                        <View style={[styles.tableCell, styles.colStatus]}>
+                                            <View style={[styles.statusDot, user.status === 'Active' ? styles.statusActive : styles.statusPending]} />
+                                            <Text style={styles.statusText}>{user.status}</Text>
+                                        </View>
+                                        <View style={[styles.tableCell, styles.colActions]}>
+                                            <TouchableOpacity onPress={() => handleEditUser(user)} style={styles.actionButton}>
+                                                <Ionicons name="create-outline" size={18} color="#4A5568" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => handleDeleteUser(user.id)} style={styles.actionButton}>
+                                                <Ionicons name="trash-outline" size={18} color="#E53E3E" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
                     </View>
                 </View>
             </ScrollView>
@@ -283,7 +358,7 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                 visible={modalVisible}
                 onRequestClose={() => setModalVisible(false)}
             >
-                <View style={styles.modalOverlay}>
+                <View style={styles.modalContainer}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>{currentUser?.id ? 'Edit User' : 'Add New User'}</Text>
 
@@ -349,7 +424,7 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                     </View>
                 </View>
             </Modal>
-        </View >
+        </View>
     );
 };
 
@@ -696,6 +771,7 @@ const styles = StyleSheet.create({
     colAvatar: { width: 50 },
     colName: { flex: 2 },
     colPhone: { flex: 1.5 },
+    colEmail: { flex: 2 },
     colRole: { flex: 1 },
     colGymId: { flex: 1 },
     colTrainer: { flex: 1.5 },

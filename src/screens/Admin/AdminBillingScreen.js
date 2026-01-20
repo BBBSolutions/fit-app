@@ -1,39 +1,70 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, Platform, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { adminApi } from '../../services/adminApi';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 const AdminBillingScreen = ({ navigation }) => {
     // State
-    const [plans, setPlans] = useState([
-        { id: '1', name: 'Monthly Membership', price: '2999', cycle: 'Monthly', active: true, description: 'Full gym access, 1 PT session', benefits: ['Gym Access', 'Locker', '1 PT Session'] },
-        { id: '2', name: 'Quarterly Saver', price: '7999', cycle: 'Quarterly', active: true, description: 'Save 10% with quarterly billing', benefits: ['Gym Access', 'Locker', '3 PT Sessions'] },
-        { id: '3', name: 'Annual Elite', price: '24999', cycle: 'Yearly', active: false, description: 'Best value for committed members', benefits: ['24/7 Access', 'Private Locker', 'Unlimited Classes'] },
-    ]);
-    const [subscriptions, setSubscriptions] = useState([
-        { id: '101', member: 'Alice Johnson', plan: 'Monthly Membership', status: 'Active', nextBilling: '2023-12-01', amount: '2999', method: 'Visa •••• 4242' },
-        { id: '102', member: 'Bob Smith', plan: 'Quarterly Saver', status: 'Past Due', nextBilling: '2023-11-28', amount: '7999', method: 'Mastercard •••• 8888' },
-        { id: '103', member: 'Charlie Brown', plan: 'Monthly Membership', status: 'Cancelled', nextBilling: '-', amount: '2999', method: 'PayPal' },
-    ]);
-    const [invoices, setInvoices] = useState([
-        { id: 'INV-2023-001', member: 'Alice Johnson', plan: 'Monthly Membership', amount: '2999', status: 'Paid', date: '2023-11-01' },
-        { id: 'INV-2023-002', member: 'Bob Smith', plan: 'Quarterly Saver', amount: '7999', status: 'Unpaid', date: '2023-11-01' },
-        { id: 'INV-2023-003', member: 'David Lee', plan: 'Day Pass', amount: '500', status: 'Refunded', date: '2023-10-28' },
-    ]);
+    const [plans, setPlans] = useState([]);
+    const [subscriptions, setSubscriptions] = useState([]);
+    const [invoices, setInvoices] = useState([]);
 
     const [modalVisible, setModalVisible] = useState(false);
     const [currentPlan, setCurrentPlan] = useState(null);
-    const [gatewayConnected, setGatewayConnected] = useState(true);
+    const [gatewayConnected, setGatewayConnected] = useState(true); // Mock status for now
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState('All');
 
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const [plansData, billingData] = await Promise.all([
+                adminApi.getPlans(),
+                adminApi.getBillingOverview()
+            ]);
+
+            // Map backend plan fields to frontend if necessary
+            // Backend: is_active, features, interval
+            // Frontend: active, benefits, cycle
+            const formattedPlans = (plansData || []).map(p => ({
+                ...p,
+                active: p.is_active,
+                benefits: p.features || [],
+                cycle: p.interval
+            }));
+
+            setPlans(formattedPlans);
+
+            if (billingData) {
+                setSubscriptions(billingData.subscriptions || []);
+                setInvoices(billingData.invoices || []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch billing data:", error);
+            // Alert.alert("Error", "Failed to load billing data");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Stats
-    const monthlyRevenue = '₹ 4.2L';
+    const totalRevenue = invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+    // Format roughly for display, e.g. 4.2L
+    const monthlyRevenue = `₹ ${(totalRevenue / 100000).toFixed(2)}L`;
+
     const activeSubscribers = subscriptions.filter(s => s.status === 'Active').length;
     const failedPayments = subscriptions.filter(s => s.status === 'Past Due').length;
-    const refundRequests = 1;
+    const refundRequests = 0; // Not yet implemented in backend
 
     // Handlers
     const handleAddPlan = () => {
@@ -47,88 +78,100 @@ const AdminBillingScreen = ({ navigation }) => {
     };
 
     const handleDeletePlan = (id) => {
-        if (confirm('Delete this plan?')) {
-            setPlans(plans.filter(p => p.id !== id));
+        Alert.alert(
+            "Delete Plan",
+            "Are you sure you want to delete this plan?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setIsLoading(true);
+                            await adminApi.deletePlan(id);
+                            setPlans(plans.filter(p => p.id !== id));
+                        } catch (error) {
+                            Alert.alert("Error", "Failed to delete plan");
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleSavePlan = async () => {
+        if (!currentPlan.name || !currentPlan.price) {
+            Alert.alert("Error", "Name and Price required");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            // Map frontend back to backend
+            const planPayload = {
+                ...currentPlan,
+                is_active: currentPlan.active,
+                features: currentPlan.benefits,
+                interval: currentPlan.cycle
+            };
+
+            if (currentPlan.id) {
+                const updated = await adminApi.updatePlan(planPayload);
+                // Map back to frontend
+                const formatted = {
+                    ...updated,
+                    active: updated.is_active,
+                    benefits: updated.features || [],
+                    cycle: updated.interval
+                };
+                setPlans(plans.map(p => p.id === currentPlan.id ? formatted : p));
+            } else {
+                const created = await adminApi.createPlan(planPayload);
+                const formatted = {
+                    ...created,
+                    active: created.is_active,
+                    benefits: created.features || [],
+                    cycle: created.interval
+                };
+                setPlans([...plans, formatted]);
+            }
+            setModalVisible(false);
+        } catch (error) {
+            Alert.alert("Error", "Failed to save plan");
+        } finally {
+            setIsSaving(false);
         }
     };
 
-    const handleSavePlan = () => {
-        if (!currentPlan.name || !currentPlan.price) return alert('Name and Price required');
+    const togglePlanStatus = async (id) => {
+        const plan = plans.find(p => p.id === id);
+        if (!plan) return;
 
-        if (currentPlan.id) {
-            setPlans(plans.map(p => p.id === currentPlan.id ? currentPlan : p));
-        } else {
-            setPlans([...plans, { ...currentPlan, id: Date.now().toString() }]);
+        // Optimistic update
+        const updatedPlans = plans.map(p => p.id === id ? { ...p, active: !p.active } : p);
+        setPlans(updatedPlans);
+
+        try {
+            await adminApi.updatePlan({
+                id: plan.id,
+                is_active: !plan.active
+            });
+        } catch (error) {
+            Alert.alert("Error", "Failed to update plan status");
+            setPlans(plans); // Revert
         }
-        setModalVisible(false);
-    };
-
-    const togglePlanStatus = (id) => {
-        setPlans(plans.map(p => p.id === id ? { ...p, active: !p.active } : p));
     };
 
     return (
         <View style={styles.container}>
-            {/* Sidebar */}
-            {isWeb && width > 768 && (
-                <View style={styles.sidebar}>
-                    <View style={styles.sidebarHeader}>
-                        <Ionicons name="fitness" size={32} color="#553C9A" />
-                        <Text style={styles.sidebarTitle}>FitPlatform</Text>
-                    </View>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminDashboard')}>
-                        <Ionicons name="grid-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Dashboard</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
-                        <Ionicons name="document-text-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Content</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
-                        <Ionicons name="funnel-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Leads</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding')}>
-                        <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Branding</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding')}>
-                        <Ionicons name="people-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Users</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItemActive}>
-                        <Ionicons name="card-outline" size={20} color="#553C9A" />
-                        <Text style={styles.sidebarItemTextActive}>Billing</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
-                        <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Analytics</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings')}>
-                        <Ionicons name="settings-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Settings</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+            {/* Sidebar check removed - assuming managed by parent navigator or responsive layout handles it elsewhere
+               But keeping container/layout structure similar to existing file
+            */}
 
             <View style={styles.mainContent}>
-                {/* Sticky Top Bar */}
-                <View style={styles.stickyBar}>
-                    <View style={styles.syncInfo}>
-                        <Text style={styles.syncText}>Last synced: Just now</Text>
-                    </View>
-                    <View style={styles.stickyActions}>
-                        <TouchableOpacity style={styles.outlineButtonSmall}>
-                            <Ionicons name="refresh" size={16} color="#553C9A" />
-                            <Text style={styles.outlineButtonTextSmall}>Refresh Data</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.primaryButtonSmall}>
-                            <Ionicons name="sync" size={16} color="#FFF" />
-                            <Text style={styles.primaryButtonTextSmall}>Sync Gateway</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     {/* Header */}
                     <View style={styles.header}>
@@ -136,10 +179,16 @@ const AdminBillingScreen = ({ navigation }) => {
                             <Text style={styles.pageTitle}>Billing & Subscription Management</Text>
                             <Text style={styles.pageSubtitle}>Configure membership plans, manage payments, and track billing activity.</Text>
                         </View>
-                        <TouchableOpacity style={styles.primaryButton} onPress={handleAddPlan}>
-                            <Ionicons name="add" size={20} color="#FFF" />
-                            <Text style={styles.primaryButtonText}>Create New Plan</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity style={styles.outlineButton} onPress={fetchData}>
+                                <Ionicons name="refresh" size={18} color="#4A5568" />
+                                <Text style={styles.outlineButtonText}>Refresh</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.primaryButton} onPress={handleAddPlan}>
+                                <Ionicons name="add" size={20} color="#FFF" />
+                                <Text style={styles.primaryButtonText}>Create New Plan</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     {/* Payment Gateway Card */}
@@ -173,7 +222,7 @@ const AdminBillingScreen = ({ navigation }) => {
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>Monthly Revenue</Text>
                             <Text style={styles.statValue}>{monthlyRevenue}</Text>
-                            <Text style={styles.statTrend}>+12% from last month</Text>
+                            <Text style={styles.statTrend}>+0% (vs last month)</Text>
                         </View>
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>Active Subscribers</Text>
@@ -191,36 +240,45 @@ const AdminBillingScreen = ({ navigation }) => {
 
                     {/* Membership Plans */}
                     <Text style={styles.sectionTitle}>Membership Plans</Text>
-                    <View style={styles.plansGrid}>
-                        {plans.map(plan => (
-                            <View key={plan.id} style={styles.planCard}>
-                                <View style={styles.planHeader}>
-                                    <Text style={styles.planName}>{plan.name}</Text>
-                                    <Switch
-                                        value={plan.active}
-                                        onValueChange={() => togglePlanStatus(plan.id)}
-                                        trackColor={{ false: "#CBD5E0", true: "#B794F4" }}
-                                        thumbColor={plan.active ? "#553C9A" : "#f4f3f4"}
-                                    />
+                    {isLoading && plans.length === 0 ? (
+                        <ActivityIndicator size="large" color="#553C9A" style={{ marginBottom: 30 }} />
+                    ) : (
+                        <View style={styles.plansGrid}>
+                            {plans.length === 0 ? (
+                                <View style={[styles.planCard, { flex: 1, alignItems: 'center', justifyContent: 'center' }]}>
+                                    <Ionicons name="pricetag-outline" size={48} color="#CBD5E0" />
+                                    <Text style={{ marginTop: 16, color: '#718096' }}>No plans created yet.</Text>
                                 </View>
-                                <Text style={styles.planPrice}>₹ {plan.price} <Text style={styles.planCycle}>/ {plan.cycle}</Text></Text>
-                                <Text style={styles.planDesc}>{plan.description}</Text>
-                                <View style={styles.planBenefits}>
-                                    {plan.benefits.map((b, i) => (
-                                        <Text key={i} style={styles.benefitItem}>• {b}</Text>
-                                    ))}
+                            ) : plans.map(plan => (
+                                <View key={plan.id} style={styles.planCard}>
+                                    <View style={styles.planHeader}>
+                                        <Text style={styles.planName}>{plan.name}</Text>
+                                        <Switch
+                                            value={plan.active}
+                                            onValueChange={() => togglePlanStatus(plan.id)}
+                                            trackColor={{ false: "#CBD5E0", true: "#B794F4" }}
+                                            thumbColor={plan.active ? "#553C9A" : "#f4f3f4"}
+                                        />
+                                    </View>
+                                    <Text style={styles.planPrice}>₹ {plan.price} <Text style={styles.planCycle}>/ {plan.cycle}</Text></Text>
+                                    <Text style={styles.planDesc}>{plan.description}</Text>
+                                    <View style={styles.planBenefits}>
+                                        {(plan.benefits || []).map((b, i) => (
+                                            <Text key={i} style={styles.benefitItem}>• {b}</Text>
+                                        ))}
+                                    </View>
+                                    <View style={styles.planActions}>
+                                        <TouchableOpacity style={styles.iconButton} onPress={() => handleEditPlan(plan)}>
+                                            <Ionicons name="create-outline" size={20} color="#4A5568" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.iconButton} onPress={() => handleDeletePlan(plan.id)}>
+                                            <Ionicons name="trash-outline" size={20} color="#E53E3E" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                                <View style={styles.planActions}>
-                                    <TouchableOpacity style={styles.iconButton} onPress={() => handleEditPlan(plan)}>
-                                        <Ionicons name="create-outline" size={20} color="#4A5568" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.iconButton} onPress={() => handleDeletePlan(plan.id)}>
-                                        <Ionicons name="trash-outline" size={20} color="#E53E3E" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
+                            ))}
+                        </View>
+                    )}
 
                     {/* Subscription Activity */}
                     <View style={styles.tableCard}>
@@ -256,34 +314,39 @@ const AdminBillingScreen = ({ navigation }) => {
                                 <Text style={[styles.tableCell, { flex: 1.5 }]}>Payment Method</Text>
                                 <Text style={[styles.tableCell, { width: 80 }]}>Actions</Text>
                             </View>
-                            {subscriptions.map(sub => (
-                                <View key={sub.id} style={styles.tableRow}>
-                                    <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{sub.member}</Text>
-                                    <Text style={[styles.tableCell, { flex: 2 }]}>{sub.plan}</Text>
-                                    <View style={[styles.tableCell, { flex: 1 }]}>
-                                        <View style={[styles.statusBadge,
-                                        sub.status === 'Active' ? styles.statusActive :
-                                            sub.status === 'Past Due' ? styles.statusWarning : styles.statusInactive
-                                        ]}>
-                                            <Text style={[styles.statusText,
-                                            sub.status === 'Active' ? styles.textActive :
-                                                sub.status === 'Past Due' ? styles.textWarning : styles.textInactive
-                                            ]}>{sub.status}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={[styles.tableCell, { flex: 1.5 }]}>{sub.nextBilling}</Text>
-                                    <Text style={[styles.tableCell, { flex: 1 }]}>₹ {sub.amount}</Text>
-                                    <Text style={[styles.tableCell, { flex: 1.5, fontSize: 12, color: '#718096' }]}>{sub.method}</Text>
-                                    <View style={[styles.tableCell, { width: 80, flexDirection: 'row', gap: 8 }]}>
-                                        <TouchableOpacity><Ionicons name="eye-outline" size={18} color="#4A5568" /></TouchableOpacity>
-                                        <TouchableOpacity><Ionicons name="ban-outline" size={18} color="#E53E3E" /></TouchableOpacity>
+                        </View>
+                        {subscriptions.length === 0 ? (
+                            <View style={{ padding: 40, alignItems: 'center' }}>
+                                <Text style={{ color: '#A0AEC0' }}>No active subscriptions.</Text>
+                            </View>
+                        ) : subscriptions.map(sub => (
+                            <View key={sub.id} style={styles.tableRow}>
+                                <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{sub.member}</Text>
+                                <Text style={[styles.tableCell, { flex: 2 }]}>{sub.plan}</Text>
+                                <View style={[styles.tableCell, { flex: 1 }]}>
+                                    <View style={[styles.statusBadge,
+                                    sub.status === 'Active' ? styles.statusActive :
+                                        sub.status === 'Past Due' ? styles.statusWarning : styles.statusInactive
+                                    ]}>
+                                        <Text style={[styles.statusText,
+                                        sub.status === 'Active' ? styles.textActive :
+                                            sub.status === 'Past Due' ? styles.textWarning : styles.textInactive
+                                        ]}>{sub.status}</Text>
                                     </View>
                                 </View>
-                            ))}
-                        </View>
+                                <Text style={[styles.tableCell, { flex: 1.5 }]}>{sub.nextBilling}</Text>
+                                <Text style={[styles.tableCell, { flex: 1 }]}>₹ {sub.amount}</Text>
+                                <Text style={[styles.tableCell, { flex: 1.5, fontSize: 12, color: '#718096' }]}>{sub.method}</Text>
+                                <View style={[styles.tableCell, { width: 80, flexDirection: 'row', gap: 8 }]}>
+                                    <TouchableOpacity><Ionicons name="eye-outline" size={18} color="#4A5568" /></TouchableOpacity>
+                                    <TouchableOpacity><Ionicons name="ban-outline" size={18} color="#E53E3E" /></TouchableOpacity>
+                                </View>
+                            </View>
+                        ))}
                     </View>
 
-                    {/* Invoice List */}
+
+                    {/* Invoice List (Visual placeholder as backend needs more data to really populate this fully) */}
                     <View style={styles.tableCard}>
                         <Text style={styles.cardTitle}>Recent Invoices</Text>
                         <View style={styles.tableContainer}>
@@ -296,7 +359,11 @@ const AdminBillingScreen = ({ navigation }) => {
                                 <Text style={[styles.tableCell, { flex: 1.5 }]}>Date</Text>
                                 <Text style={[styles.tableCell, { width: 60 }]}>PDF</Text>
                             </View>
-                            {invoices.map(inv => (
+                            {invoices.length === 0 ? (
+                                <View style={{ padding: 40, alignItems: 'center' }}>
+                                    <Text style={{ color: '#A0AEC0' }}>No recent invoices.</Text>
+                                </View>
+                            ) : invoices.map(inv => (
                                 <View key={inv.id} style={styles.tableRow}>
                                     <Text style={[styles.tableCell, { flex: 1.5, color: '#553C9A' }]}>{inv.id}</Text>
                                     <Text style={[styles.tableCell, { flex: 2 }]}>{inv.member}</Text>
@@ -316,9 +383,8 @@ const AdminBillingScreen = ({ navigation }) => {
                             ))}
                         </View>
                     </View>
-
                 </ScrollView>
-            </View>
+            </View >
 
             {/* Plan Modal */}
             <Modal visible={modalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
@@ -332,7 +398,7 @@ const AdminBillingScreen = ({ navigation }) => {
                         <View style={styles.row}>
                             <View style={{ flex: 1, marginRight: 10 }}>
                                 <Text style={styles.label}>Price (₹)</Text>
-                                <TextInput style={styles.input} value={currentPlan?.price} onChangeText={t => setCurrentPlan({ ...currentPlan, price: t })} keyboardType="numeric" />
+                                <TextInput style={styles.input} value={currentPlan?.price ? String(currentPlan.price) : ''} onChangeText={t => setCurrentPlan({ ...currentPlan, price: t })} keyboardType="numeric" />
                             </View>
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.label}>Billing Cycle</Text>
@@ -354,13 +420,13 @@ const AdminBillingScreen = ({ navigation }) => {
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.saveButton} onPress={handleSavePlan}>
-                                <Text style={styles.saveButtonText}>Save Plan</Text>
+                                {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Save Plan</Text>}
                             </TouchableOpacity>
                         </View>
                     </View>
                 </View>
             </Modal>
-        </View>
+        </View >
     );
 };
 

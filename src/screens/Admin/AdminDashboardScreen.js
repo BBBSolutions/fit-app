@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Dimensions, Image, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Dimensions, Image, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AdminDrawer from '../../components/AdminDrawer';
+import { adminApi } from '../../services/adminApi';
 
 const isWeb = Platform.OS === 'web';
 
@@ -10,13 +11,48 @@ const AdminDashboardScreen = ({ navigation }) => {
     const { width } = useWindowDimensions();
     const isMobile = width < 768;
 
-    // Mock Data
+    const [stats, setStats] = useState({
+        activeMembers: 0,
+        activeTrainers: 0,
+        monthlyRevenue: 0,
+        leads: 0,
+        recentActivity: [],
+        pendingTasks: [],
+        leadsSummary: [],
+        upcomingEvents: []
+    });
+    const [loading, setLoading] = useState(true);
+
+    const fetchStats = async () => {
+        setLoading(true);
+        try {
+            const data = await adminApi.getDashboardStats();
+            setStats({
+                ...data,
+                // Ensure arrays are at least empty arrays if undefined
+                recentActivity: data.recentActivity || [],
+                pendingTasks: data.pendingTasks || [],
+                leadsSummary: data.leadsSummary || [],
+                upcomingEvents: data.upcomingEvents || []
+            });
+        } catch (error) {
+            console.error("Failed to fetch admin stats:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchStats();
+    }, []);
+
+    // KPIs with Real Data
     const kpis = [
-        { title: 'Active Members', value: '1,240', change: '+12%', trend: 'up', icon: 'people' },
-        { title: 'Active Trainers', value: '45', change: '+5%', trend: 'up', icon: 'fitness' },
-        { title: 'Revenue (Month)', value: '₹ 42.5L', change: '+8.5%', trend: 'up', icon: 'cash' },
-        { title: 'New Leads', value: '128', change: '+15%', trend: 'up', icon: 'trending-up' },
-        { title: 'Open Inquiries', value: '12', change: '-2%', trend: 'down', icon: 'chatbubbles' }, // down is good here? context dependent, assuming generic up=good for now or just visual
+        { title: 'Active Members', value: loading ? '...' : stats.activeMembers, change: '+12%', trend: 'up', icon: 'people' },
+        { title: 'Active Trainers', value: loading ? '...' : stats.activeTrainers, change: '+5%', trend: 'up', icon: 'fitness' },
+        { title: 'Revenue (Month)', value: loading ? '...' : `₹ ${stats.monthlyRevenue}`, change: '+8.5%', trend: 'up', icon: 'cash' }, // TODO: Format currency properly
+        { title: 'New Leads', value: loading ? '...' : stats.leads, change: '+15%', trend: 'up', icon: 'trending-up' },
+        { title: 'Open Inquiries', value: '0', change: '0%', trend: 'down', icon: 'chatbubbles' }, // Placeholder
     ];
 
     const quickActions = [
@@ -28,49 +64,42 @@ const AdminDashboardScreen = ({ navigation }) => {
         { label: 'Analytics', icon: 'bar-chart', route: 'AdminAnalytics' },
     ];
 
-    const recentActivity = [
-        { id: 1, text: 'New member sign-up: Alice Johnson', time: '2 mins ago', icon: 'person-add', color: '#3182CE' },
-        { id: 2, text: 'Trainer Mike approved a workout plan', time: '15 mins ago', icon: 'checkmark-circle', color: '#38A169' },
-        { id: 3, text: 'Payment received from Bob Smith', time: '1 hour ago', icon: 'cash', color: '#38A169' },
-        { id: 4, text: 'Failed payment alert: David Lee', time: '2 hours ago', icon: 'alert-circle', color: '#E53E3E' },
-        { id: 5, text: 'New inquiry: "Personal Training rates?"', time: '3 hours ago', icon: 'chatbubble', color: '#D69E2E' },
-    ];
+    // Data is now in 'stats' state
 
-    const pendingTasks = [
-        { id: 1, text: '3 Pending trainer approvals', severity: 'high', action: 'Review' },
-        { id: 2, text: '5 Users without assigned trainers', severity: 'medium', action: 'Assign' },
-        { id: 3, text: '2 Overdue payments', severity: 'high', action: 'View' },
-        { id: 4, text: 'Payment gateway sync warning', severity: 'medium', action: 'Fix' },
-    ];
+    // Simple Chart Component (Placeholder for future data)
+    const SimpleLineChart = ({ height = 60, color = '#3182CE', data = [] }) => {
+        if (!data || data.length === 0) {
+            return (
+                <View style={{ height, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FAFC', borderRadius: 8 }}>
+                    <Text style={{ fontSize: 12, color: '#A0AEC0' }}>No data available</Text>
+                </View>
+            );
+        }
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 4 }}>
+                {data.map((h, i) => (
+                    <View key={i} style={{ flex: 1, backgroundColor: color, height: `${h}%`, borderRadius: 2, opacity: 0.6 }} />
+                ))}
+            </View>
+        );
+    };
 
-    const leadsSummary = [
-        { source: 'Walk-in', count: 15, conversion: '60%' },
-        { source: 'Website', count: 45, conversion: '12%' },
-        { source: 'Referral', count: 22, conversion: '40%' },
-    ];
-
-    const upcomingEvents = [
-        { title: 'Group HIIT Session', time: '10:00 AM', trainer: 'Sarah' },
-        { title: 'New Member Orientation', time: '2:00 PM', trainer: 'Mike' },
-        { title: 'Staff Meeting', time: '5:00 PM', trainer: 'Admin' },
-    ];
-
-    // Simple Chart Component (Mock)
-    const SimpleLineChart = ({ height = 60, color = '#3182CE' }) => (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 4 }}>
-            {[30, 45, 35, 60, 50, 70, 65, 85, 75, 90].map((h, i) => (
-                <View key={i} style={{ flex: 1, backgroundColor: color, height: `${h}%`, borderRadius: 2, opacity: 0.6 }} />
-            ))}
-        </View>
-    );
-
-    const SimpleBarChart = ({ height = 60, color = '#805AD5' }) => (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 4 }}>
-            {[40, 60, 45, 80, 55, 70, 65, 90, 50, 75].map((h, i) => (
-                <View key={i} style={{ flex: 1, backgroundColor: color, height: `${h}%`, borderRadius: 2, opacity: 0.8 }} />
-            ))}
-        </View>
-    );
+    const SimpleBarChart = ({ height = 60, color = '#805AD5', data = [] }) => {
+        if (!data || data.length === 0) {
+            return (
+                <View style={{ height, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FAFC', borderRadius: 8 }}>
+                    <Text style={{ fontSize: 12, color: '#A0AEC0' }}>No data available</Text>
+                </View>
+            );
+        }
+        return (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height, gap: 4 }}>
+                {data.map((h, i) => (
+                    <View key={i} style={{ flex: 1, backgroundColor: color, height: `${h}%`, borderRadius: 2, opacity: 0.8 }} />
+                ))}
+            </View>
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -141,8 +170,8 @@ const AdminDashboardScreen = ({ navigation }) => {
                         </View>
                     </View>
                     <View style={styles.headerControls}>
-                        <TouchableOpacity style={styles.iconButton}>
-                            <Ionicons name="refresh-outline" size={20} color="#4A5568" />
+                        <TouchableOpacity style={styles.iconButton} onPress={fetchStats}>
+                            <Ionicons name="refresh-outline" size={20} color={loading ? "#A0AEC0" : "#4A5568"} />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('AdminSettings')}>
                             <Ionicons name="settings-outline" size={20} color="#4A5568" />
@@ -210,17 +239,21 @@ const AdminDashboardScreen = ({ navigation }) => {
                             <View style={styles.sectionCard}>
                                 <Text style={styles.cardTitle}>Recent Activity</Text>
                                 <View style={styles.activityList}>
-                                    {recentActivity.map(item => (
-                                        <View key={item.id} style={styles.activityItem}>
-                                            <View style={[styles.activityIcon, { backgroundColor: item.color + '20' }]}>
-                                                <Ionicons name={item.icon} size={16} color={item.color} />
+                                    {stats.recentActivity.length === 0 ? (
+                                        <Text style={{ color: '#A0AEC0', fontStyle: 'italic', padding: 8 }}>No recent activity to show.</Text>
+                                    ) : (
+                                        stats.recentActivity.map(item => (
+                                            <View key={item.id} style={styles.activityItem}>
+                                                <View style={[styles.activityIcon, { backgroundColor: item.color + '20' }]}>
+                                                    <Ionicons name={item.icon} size={16} color={item.color} />
+                                                </View>
+                                                <View style={styles.activityContent}>
+                                                    <Text style={styles.activityText}>{item.text}</Text>
+                                                    <Text style={styles.activityTime}>{item.time}</Text>
+                                                </View>
                                             </View>
-                                            <View style={styles.activityContent}>
-                                                <Text style={styles.activityText}>{item.text}</Text>
-                                                <Text style={styles.activityTime}>{item.time}</Text>
-                                            </View>
-                                        </View>
-                                    ))}
+                                        ))
+                                    )}
                                 </View>
                             </View>
                         </View>
@@ -230,52 +263,64 @@ const AdminDashboardScreen = ({ navigation }) => {
                             {/* Pending Tasks */}
                             <View style={styles.card}>
                                 <Text style={styles.cardTitle}>Pending Tasks</Text>
-                                {pendingTasks.map(task => (
-                                    <View key={task.id} style={styles.taskItem}>
-                                        <View style={styles.taskContent}>
-                                            <Text style={styles.taskText}>{task.text}</Text>
-                                            <View style={[styles.severityDot, task.severity === 'high' ? { backgroundColor: '#E53E3E' } : { backgroundColor: '#D69E2E' }]} />
+                                {stats.pendingTasks.length === 0 ? (
+                                    <Text style={{ color: '#A0AEC0', fontStyle: 'italic', padding: 8 }}>No pending tasks.</Text>
+                                ) : (
+                                    stats.pendingTasks.map(task => (
+                                        <View key={task.id} style={styles.taskItem}>
+                                            <View style={styles.taskContent}>
+                                                <Text style={styles.taskText}>{task.text}</Text>
+                                                <View style={[styles.severityDot, task.severity === 'high' ? { backgroundColor: '#E53E3E' } : { backgroundColor: '#D69E2E' }]} />
+                                            </View>
+                                            <TouchableOpacity style={styles.taskButton}>
+                                                <Text style={styles.taskButtonText}>{task.action}</Text>
+                                            </TouchableOpacity>
                                         </View>
-                                        <TouchableOpacity style={styles.taskButton}>
-                                            <Text style={styles.taskButtonText}>{task.action}</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
+                                    ))
+                                )}
                             </View>
 
                             {/* Leads Summary */}
                             <View style={styles.card}>
                                 <Text style={styles.cardTitle}>Leads Summary</Text>
-                                <View style={styles.tableContainer}>
-                                    <View style={styles.tableRowHeader}>
-                                        <Text style={[styles.tableCell, { flex: 2 }]}>Source</Text>
-                                        <Text style={[styles.tableCell, { flex: 1 }]}>New</Text>
-                                        <Text style={[styles.tableCell, { flex: 1 }]}>Conv.</Text>
-                                    </View>
-                                    {leadsSummary.map((lead, i) => (
-                                        <View key={i} style={styles.tableRow}>
-                                            <Text style={[styles.tableCell, { flex: 2 }]}>{lead.source}</Text>
-                                            <Text style={[styles.tableCell, { flex: 1, fontWeight: 'bold' }]}>{lead.count}</Text>
-                                            <Text style={[styles.tableCell, { flex: 1, color: '#38A169' }]}>{lead.conversion}</Text>
+                                {stats.leadsSummary.length === 0 ? (
+                                    <Text style={{ color: '#A0AEC0', fontStyle: 'italic', padding: 8 }}>No leads data available.</Text>
+                                ) : (
+                                    <View style={styles.tableContainer}>
+                                        <View style={styles.tableRowHeader}>
+                                            <Text style={[styles.tableCell, { flex: 2 }]}>Source</Text>
+                                            <Text style={[styles.tableCell, { flex: 1 }]}>New</Text>
+                                            <Text style={[styles.tableCell, { flex: 1 }]}>Conv.</Text>
                                         </View>
-                                    ))}
-                                </View>
+                                        {stats.leadsSummary.map((lead, i) => (
+                                            <View key={i} style={styles.tableRow}>
+                                                <Text style={[styles.tableCell, { flex: 2 }]}>{lead.source}</Text>
+                                                <Text style={[styles.tableCell, { flex: 1, fontWeight: 'bold' }]}>{lead.count}</Text>
+                                                <Text style={[styles.tableCell, { flex: 1, color: '#38A169' }]}>{lead.conversion}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
                             </View>
 
                             {/* Upcoming Events */}
                             <View style={styles.card}>
                                 <Text style={styles.cardTitle}>Upcoming Events</Text>
-                                {upcomingEvents.map((event, i) => (
-                                    <View key={i} style={styles.eventItem}>
-                                        <View style={styles.eventTimeBox}>
-                                            <Text style={styles.eventTime}>{event.time}</Text>
+                                {stats.upcomingEvents.length === 0 ? (
+                                    <Text style={{ color: '#A0AEC0', fontStyle: 'italic', padding: 8 }}>No upcoming events.</Text>
+                                ) : (
+                                    stats.upcomingEvents.map((event, i) => (
+                                        <View key={i} style={styles.eventItem}>
+                                            <View style={styles.eventTimeBox}>
+                                                <Text style={styles.eventTime}>{event.time}</Text>
+                                            </View>
+                                            <View>
+                                                <Text style={styles.eventTitle}>{event.title}</Text>
+                                                <Text style={styles.eventTrainer}>{event.trainer}</Text>
+                                            </View>
                                         </View>
-                                        <View>
-                                            <Text style={styles.eventTitle}>{event.title}</Text>
-                                            <Text style={styles.eventTrainer}>{event.trainer}</Text>
-                                        </View>
-                                    </View>
-                                ))}
+                                    ))
+                                )}
                             </View>
                         </View>
                     </View>
