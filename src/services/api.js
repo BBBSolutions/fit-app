@@ -1,18 +1,15 @@
-import { getAuth } from "firebase/auth";
+import { supabase } from "../config/supabaseAuth";
 import { API_BASE_URL } from "../config/supabaseConfig";
 
 const getHeaders = async () => {
-    const auth = getAuth();
-    const user = auth.currentUser;
+    const { data: { session } } = await supabase.auth.getSession();
 
-    if (!user) {
+    if (!session) {
         throw new Error("User not authenticated");
     }
 
-    const token = await user.getIdToken();
-
     return {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json'
     };
 };
@@ -80,8 +77,6 @@ export const api = {
 
     updateProfile: async (data) => {
         const headers = await getHeaders();
-        const auth = getAuth();
-        const user = auth.currentUser;
         console.log("Updating Profile (Raw):", data);
         const toSnakeCase = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
         const dbData = {};
@@ -96,9 +91,6 @@ export const api = {
             dbData.full_name = dbData.name;
         } else if (dbData.full_name && !dbData.name) {
             dbData.name = dbData.full_name;
-        }
-        if (!dbData.phone_number && user && user.phoneNumber) {
-            dbData.phone_number = user.phoneNumber;
         }
         console.log("Updating Profile (SnakeCase):", dbData);
         const response = await fetch(`${API_BASE_URL}/profiles/update`, {

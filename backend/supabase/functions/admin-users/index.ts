@@ -9,44 +9,32 @@ serve(async (req) => {
     }
 
     try {
-        const body = await req.json();
-        const { token } = body;
-        const { action, payload } = body;
+        // Get token from Authorization header
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) throw new Error('Missing authorization header');
 
-        if (!token) throw new Error('Missing token in request body');
+        const token = authHeader.replace('Bearer ', '');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        const firebaseKey = Deno.env.get('FIREBASE_API_KEY') ?? '';
 
         const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        // 1. Verify Auth Token (Firebase)
-        const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: token })
-        });
+        // 1. Verify Supabase JWT and get user
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
-        const googleData = await response.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
+        if (authError || !user) {
+            console.error("Auth error:", authError);
+            throw new Error("Unauthorized");
+        }
 
-        // 2. Resolve Internal User ID
-        const { data: userData, error: userError } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
+        const userId = user.id; // Direct UUID from Supabase Auth
 
-        if (userError || !userData) throw new Error("User map not found");
-        const internalUserId = userData.id;
-
-        // 3. Fetcy Admin Profile & Gym Code
+        // 2. Get Admin Profile & Gym Code
         const { data: adminProfile, error: adminError } = await supabaseClient
             .from('profiles')
             .select('gym_code')
-            .eq('user_id', internalUserId)
+            .eq('user_id', userId)
             .single();
 
         if (adminError || !adminProfile?.gym_code) {
@@ -55,6 +43,10 @@ serve(async (req) => {
         }
 
         const gymCode = adminProfile.gym_code;
+
+        // 3. Parse action and payload from body
+        const body = await req.json();
+        const { action, payload } = body;
 
         // 4. Handle Actions
         let result;
@@ -66,7 +58,7 @@ serve(async (req) => {
                 // 1. Fetch Active Profiles
                 const { data: activeUsers, error: profilesError } = await supabaseClient
                     .from('profiles')
-                    .select('user_id, full_name, role, phone_number, created_at, gym_code, app_users(email)')
+                    .select('user_id, full_name, role, phone_number, created_at, gym_code, address, app_users(email)')
                     .eq('gym_code', gymCode)
                     .neq('role', 'admin')
                     .order('created_at', { ascending: false });
@@ -76,14 +68,32 @@ serve(async (req) => {
                 // 2. Fetch Pending Invitations
                 const { data: pendingUsers, error: invitesError } = await supabaseClient
                     .from('invitations')
-                    .select('id, name, role, phone, email, created_at, status')
+                    .select('id, name, role, phone, email, plan_id, pt_plan_id, created_at, status, address')
                     .eq('gym_code', gymCode)
                     .eq('status', 'pending')
                     .order('created_at', { ascending: false });
 
                 if (invitesError) throw invitesError;
 
-                // 3. Merge & Map
+                // 3. Fetch Active Subscriptions for Active Users
+                const activeUserIds = activeUsers.map(u => u.user_id);
+                let userPlans: any = {};
+
+                if (activeUserIds.length > 0) {
+                    const { data: subs } = await supabaseClient
+                        .from('subscriptions')
+                        .select('user_id, plan_id, pt_plan_id')
+                        .in('user_id', activeUserIds)
+                        .eq('status', 'active'); // Or just take the latest?
+
+                    if (subs) {
+                        subs.forEach(s => {
+                            userPlans[s.user_id] = { plan_id: s.plan_id, pt_plan_id: s.pt_plan_id };
+                        });
+                    }
+                }
+
+                // 4. Merge & Map
                 const mappedActive = activeUsers.map(u => ({
                     id: u.user_id,
                     full_name: u.full_name,
@@ -92,7 +102,10 @@ serve(async (req) => {
                     role: u.role,
                     status: 'Active',
                     created_at: u.created_at,
-                    gym_code: u.gym_code
+                    gym_code: u.gym_code,
+                    plan_id: userPlans[u.user_id]?.plan_id || null,
+                    pt_plan_id: userPlans[u.user_id]?.pt_plan_id || null,
+                    address: u.address
                 }));
 
                 const mappedPending = pendingUsers.map(u => ({
@@ -103,13 +116,39 @@ serve(async (req) => {
                     role: u.role,
                     status: 'Pending',
                     created_at: u.created_at,
-                    gym_code: gymCode
+                    gym_code: gymCode,
+                    plan_id: u.plan_id,
+                    pt_plan_id: u.pt_plan_id,
+                    address: u.address
                 }));
 
                 // Combine and sort by newest first
                 result = [...mappedPending, ...mappedActive].sort((a, b) =>
                     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 );
+                break;
+
+            case 'bulk_create':
+                const { users } = payload;
+                if (!Array.isArray(users) || users.length === 0) {
+                    throw new Error("No users provided");
+                }
+
+                const invitationsToInsert = users.map(u => ({
+                    gym_code: gymCode,
+                    role: u.role?.toLowerCase() || 'member',
+                    name: u.name,
+                    phone: u.phone,
+                    email: u.email,
+                    address: u.address || null,
+                    plan_id: null,
+                    status: 'pending'
+                }));
+
+                ({ data: result, error } = await supabaseClient
+                    .from('invitations')
+                    .insert(invitationsToInsert)
+                    .select());
                 break;
 
             case 'create':
@@ -137,7 +176,10 @@ serve(async (req) => {
                         name: payload.name,
                         phone: payload.phone,
                         email: payload.email,
-                        status: 'pending'
+                        plan_id: payload.plan_id || null,
+                        pt_plan_id: payload.pt_plan_id || null,
+                        status: 'pending',
+                        address: payload.address
                     })
                     .select()
                     .single());
@@ -145,19 +187,74 @@ serve(async (req) => {
 
             case 'update':
                 if (!payload?.id) throw new Error("Missing user ID");
-                // Only allow updating specific fields
-                const updateData: any = {};
-                if (payload.name) updateData.full_name = payload.name;
-                if (payload.phone) updateData.phone_number = payload.phone;
-                if (payload.role) updateData.role = payload.role.toLowerCase();
 
-                ({ data: result, error } = await supabaseClient
-                    .from('profiles')
-                    .update(updateData)
-                    .eq('user_id', payload.id) // This is the user_id (UUID)
-                    .eq('gym_code', gymCode) // Ensure belongs to this gym
+                // 1. Try updating Invitation (Pending User)
+                const { data: inviteUpdate, error: inviteError } = await supabaseClient
+                    .from('invitations')
+                    .update({
+                        name: payload.name,
+                        phone: payload.phone,
+                        email: payload.email,
+                        role: payload.role?.toLowerCase(),
+                        plan_id: payload.plan_id,
+                        pt_plan_id: payload.pt_plan_id,
+                        address: payload.address
+                    })
+                    .eq('id', payload.id)
                     .select()
-                    .single());
+                    .maybeSingle();
+
+                if (inviteUpdate) {
+                    result = inviteUpdate;
+                    break;
+                }
+
+                // 2. If not invitation, Update Profile (Active User)
+                const profileUpdates: any = {};
+                if (payload.name) profileUpdates.full_name = payload.name;
+                if (payload.phone) profileUpdates.phone_number = payload.phone;
+                if (payload.role) profileUpdates.role = payload.role.toLowerCase();
+                if (payload.address) profileUpdates.address = payload.address;
+
+                const { data: profileUpdate, error: profileError } = await supabaseClient
+                    .from('profiles')
+                    .update(profileUpdates)
+                    .eq('user_id', payload.id)
+                    .eq('gym_code', gymCode)
+                    .select()
+                    .single();
+
+                if (profileError) throw profileError;
+                result = profileUpdate;
+
+                // 3. Update Subscription for Active User
+                if (payload.plan_id || payload.pt_plan_id !== undefined) {
+                    const { data: existingSub } = await supabaseClient
+                        .from('subscriptions')
+                        .select('id')
+                        .eq('user_id', payload.id)
+                        .maybeSingle();
+
+                    const subUpdates: any = {};
+                    if (payload.plan_id) subUpdates.plan_id = payload.plan_id;
+                    if (payload.pt_plan_id !== undefined) subUpdates.pt_plan_id = payload.pt_plan_id;
+
+                    if (existingSub) {
+                        await supabaseClient
+                            .from('subscriptions')
+                            .update(subUpdates)
+                            .eq('id', existingSub.id);
+                    } else {
+                        await supabaseClient
+                            .from('subscriptions')
+                            .insert({
+                                user_id: payload.id,
+                                plan_id: payload.plan_id || null,
+                                pt_plan_id: payload.pt_plan_id || null,
+                                status: 'active'
+                            });
+                    }
+                }
                 break;
 
             case 'delete':

@@ -8,43 +8,29 @@ serve(async (req) => {
     }
 
     try {
-        const { token, action, payload } = await req.json();
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) throw new Error('Missing authorization header');
+        const token = authHeader.replace('Bearer ', '');
 
-        if (!token) throw new Error('Missing token');
-
-        // 1. Verify Auth & Get Gym Code
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        const firebaseKey = Deno.env.get('FIREBASE_API_KEY') ?? '';
         const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        const authResponse = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await authResponse.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
-
-        // 2. Resolve Internal User ID
-        const { data: userData, error: userError } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-
-        if (userError || !userData) throw new Error("User map not found");
-        const internalUserId = userData.id;
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+        if (authError || !user) throw new Error("Unauthorized");
+        const userId = user.id;
 
         const { data: adminProfile, error: profileError } = await supabaseClient
             .from('profiles')
             .select('gym_code')
-            .eq('user_id', internalUserId)
+            .eq('user_id', userId)
             .single();
 
         if (profileError || !adminProfile?.gym_code) throw new Error("Admin profile or Gym Code not found");
         const gymCode = adminProfile.gym_code;
+
+        const body = await req.json();
+        const { action, payload } = body;
 
         // 2. Handle Actions
         let result;
@@ -55,7 +41,7 @@ serve(async (req) => {
             case 'fetch_plans':
                 ({ data: result, error } = await supabaseClient
                     .from('plans')
-                    .select('*')
+                    .select('id, name, description, price, currency, interval, features, is_active, type, stripe_price_id, gym_code, created_at')
                     .eq('gym_code', gymCode)
                     .order('created_at', { ascending: false }));
                 break;
@@ -65,7 +51,7 @@ serve(async (req) => {
                 ({ data: result, error } = await supabaseClient
                     .from('plans')
                     .insert({ ...payload, gym_code: gymCode })
-                    .select()
+                    .select('id, name, description, price, currency, interval, features, is_active, type, stripe_price_id, gym_code, created_at')
                     .single());
                 break;
 
@@ -77,7 +63,7 @@ serve(async (req) => {
                     .update(planUpdates)
                     .eq('id', planId)
                     .eq('gym_code', gymCode)
-                    .select()
+                    .select('id, name, description, price, currency, interval, features, is_active, type, stripe_price_id, gym_code, created_at')
                     .single());
                 break;
 
@@ -92,39 +78,111 @@ serve(async (req) => {
 
             // SUBSCRIPTIONS & INVOICES (Read-Only Logic for now, likely joining with users)
             case 'fetch_billing_overview':
-                // This would usually come from Stripe or distinct tables. 
-                // For now, we will return empty lists or query the existing (schema v1) subscriptions table if relevant,
-                // but migration 20240101...00_initial_schema.sql created a 'subscriptions' table.
-                // We need to ensuring we filter by users belonging to this gym.
-
-                // 1. Get all user IDs for this gym
-                const { data: gymUsers } = await supabaseClient
-                    .from('profiles')
-                    .select('user_id')
+                // 1. Fetch Plans
+                const { data: plans } = await supabaseClient
+                    .from('plans')
+                    .select('id, name, price, interval')
                     .eq('gym_code', gymCode);
 
-                const userIds = gymUsers?.map(u => u.user_id) || [];
+                const planMap: Record<string, any> = {};
+                (plans || []).forEach((p: any) => planMap[p.id] = p);
 
-                let subscriptions = [];
-                let invoices = []; // 'payments' table in schema
+                let allSubscriptions: any[] = [];
 
-                if (userIds.length > 0) {
-                    const { data: subs } = await supabaseClient
-                        .from('subscriptions')
-                        .select('*, profiles:user_id(name)') // Join to get user name
-                        .in('user_id', userIds);
-                    subscriptions = subs || [];
+                // Helper to calc next billing
+                const calculateNextBilling = (startDateStr: string, interval: string) => {
+                    const date = new Date(startDateStr || Date.now());
+                    const intervalLower = interval?.toLowerCase() || 'monthly';
 
-                    const { data: invs } = await supabaseClient
-                        .from('payments') // Assuming payments acts as invoices history
-                        .select('*, profiles:user_id(name)')
-                        .in('user_id', userIds)
-                        .order('created_at', { ascending: false })
-                        .limit(50);
-                    invoices = invs || [];
+                    if (intervalLower === 'yearly' || intervalLower === 'year') {
+                        date.setFullYear(date.getFullYear() + 1);
+                    } else if (intervalLower === 'half yearly' || intervalLower === '6 months') {
+                        date.setMonth(date.getMonth() + 6);
+                    } else if (intervalLower === 'quarterly' || intervalLower === 'quarter') {
+                        date.setMonth(date.getMonth() + 3);
+                    } else {
+                        // Monthly or default
+                        date.setMonth(date.getMonth() + 1);
+                    }
+                    return date.toISOString().split('T')[0];
+                };
+
+                // 2. Pending Members (Invitations) -> Show as ACTIVE for Billing purposes
+                const { data: invites } = await supabaseClient
+                    .from('invitations')
+                    .select('id, name, plan_id, pt_plan_id, created_at, status')
+                    .eq('gym_code', gymCode)
+                    .eq('status', 'pending')
+                    .not('plan_id', 'is', null);
+
+                if (invites) {
+                    invites.forEach((inv: any) => {
+                        const plan = planMap[inv.plan_id];
+                        const ptPlan = inv.pt_plan_id ? planMap[inv.pt_plan_id] : null;
+
+                        if (plan) {
+                            const totalAmount = (Number(plan.price) || 0) + (ptPlan ? (Number(ptPlan.price) || 0) : 0);
+                            allSubscriptions.push({
+                                id: `inv-${inv.id}`,
+                                member: inv.name, // Removed '(Pending)' suffix as per "Active" request imply they are treated as members
+                                plan: plan.name,
+                                amount: totalAmount,
+                                pt: ptPlan ? 'Yes' : 'No',
+                                status: 'Active', // Requested by user
+                                nextBilling: calculateNextBilling(inv.created_at, plan.interval),
+                                method: 'Cash/Manual'
+                            });
+                        }
+                    });
                 }
 
-                result = { subscriptions, invoices };
+                // 3. Active Members (Profiles + Subscriptions Table)
+                const { data: profiles } = await supabaseClient
+                    .from('profiles')
+                    .select('user_id, full_name')
+                    .eq('gym_code', gymCode);
+
+                const profileMap: Record<string, any> = {};
+                const userIds: string[] = [];
+                if (profiles) {
+                    profiles.forEach((p: any) => {
+                        profileMap[p.user_id] = p;
+                        userIds.push(p.user_id);
+                    });
+                }
+
+                if (userIds.length > 0) {
+                    // Fetch active subscriptions
+                    const { data: activeSubs } = await supabaseClient
+                        .from('subscriptions')
+                        .select('id, user_id, plan_id, pt_plan_id, status, created_at')
+                        .in('user_id', userIds)
+                        .eq('status', 'active');
+
+                    if (activeSubs) {
+                        activeSubs.forEach((sub: any) => {
+                            const plan = planMap[sub.plan_id];
+                            const ptPlan = sub.pt_plan_id ? planMap[sub.pt_plan_id] : null;
+                            const profile = profileMap[sub.user_id];
+
+                            if (plan && profile) {
+                                const totalAmount = (Number(plan.price) || 0) + (ptPlan ? (Number(ptPlan.price) || 0) : 0);
+                                allSubscriptions.push({
+                                    id: sub.id,
+                                    member: profile.full_name,
+                                    plan: plan.name,
+                                    amount: totalAmount,
+                                    pt: ptPlan ? 'Yes' : 'No',
+                                    status: 'Active',
+                                    nextBilling: calculateNextBilling(sub.created_at, plan.interval),
+                                    method: 'Cash/Manual'
+                                });
+                            }
+                        });
+                    }
+                }
+
+                result = { subscriptions: allSubscriptions, invoices: [] };
                 break;
 
             default:

@@ -1,14 +1,16 @@
-import { getAuth } from "firebase/auth";
+import { supabase } from "../config/supabaseAuth";
 import { API_BASE_URL, SUPABASE_ANON_KEY } from "../config/supabaseConfig";
 
 const getHeaders = async () => {
-    // For Supabase Functions, we must use the Anon Key or a valid Supabase JWT in the Authorization header.
-    // Sending the Firebase token here causes a 401 "Invalid JWT" from the Supabase Gateway.
-    // We pass the Firebase token in a custom header if verification is needed securely.
+    // Get Supabase session token
+    const { data: { session } } = await supabase.auth.getSession();
 
-    // For this implementation, we use Anon Key to pass the gateway.
+    if (!session) {
+        throw new Error("User not authenticated");
+    }
+
     return {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json'
     };
 };
@@ -16,15 +18,11 @@ const getHeaders = async () => {
 export const adminApi = {
     getDashboardStats: async () => {
         const headers = await getHeaders();
-        const auth = getAuth();
-        const user = auth.currentUser;
-        if (!user) throw new Error("User not authenticated");
-        const token = await user.getIdToken();
 
         const response = await fetch(`${API_BASE_URL}/admin-dashboard-stats`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ token })
+            body: JSON.stringify({})
         });
 
         if (!response.ok) {
@@ -55,15 +53,11 @@ export const adminApi = {
 
     async _post(endpoint, body) {
         const headers = await getHeaders();
-        const auth = getAuth();
-        const user = auth.currentUser;
-        if (!user) throw new Error("User not authenticated");
-        const token = await user.getIdToken();
 
         const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ token, ...body })
+            body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -81,6 +75,17 @@ export const adminApi = {
     },
     createUser: async (user) => {
         return adminApi._post('admin-users', { action: 'create', payload: user });
+    },
+    bulkCreateUsers: async (users) => {
+        return adminApi._post('admin-users', { action: 'bulk_create', payload: { users } });
+    },
+
+    // BRANDING
+    fetchBranding: async () => {
+        return adminApi._post('admin-branding', { action: 'fetch' });
+    },
+    updateBranding: async (data) => {
+        return adminApi._post('admin-branding', { action: 'update', payload: data });
     },
     updateUser: async (user) => {
         return adminApi._post('admin-users', { action: 'update', payload: user });
@@ -101,6 +106,12 @@ export const adminApi = {
     },
     deleteLead: async (id) => {
         return adminApi._post('admin-leads', { action: 'delete', payload: { id } });
+    },
+    fetchLeadLogs: async (leadId) => {
+        return adminApi._post('admin-leads', { action: 'fetch_logs', payload: { lead_id: leadId } });
+    },
+    addLeadLog: async (log) => {
+        return adminApi._post('admin-leads', { action: 'add_log', payload: log });
     },
 
     // CONTENT
@@ -139,3 +150,5 @@ export const adminApi = {
         return adminApi._post('admin-get-analytics', {});
     }
 };
+
+export { supabase };

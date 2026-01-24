@@ -10,40 +10,25 @@ serve(async (req) => {
     }
 
     try {
-        const { token } = await req.json();
-
-        if (!token) throw new Error('Missing token in request body');
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) throw new Error('Missing authorization header');
+        const token = authHeader.replace('Bearer ', '');
 
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        // Verify user via Firebase
-        const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await googleRes.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
-
-        // 2. Resolve Internal User ID
-        const { data: userData, error: userError } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-
-        if (userError || !userData) throw new Error("User map not found");
-        const internalUserId = userData.id;
+        // Verify Supabase JWT
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+        if (authError || !user) throw new Error("Unauthorized");
+        const userId = user.id;
 
         // Check if user is admin and get Gym Code
         const { data: adminProfile, error: adminError } = await supabaseClient
             .from('profiles')
             .select('gym_code')
-            .eq('user_id', internalUserId)
+            .eq('user_id', userId)
             .single();
 
         if (adminError || !adminProfile?.gym_code) {

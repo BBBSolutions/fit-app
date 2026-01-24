@@ -8,43 +8,33 @@ serve(async (req) => {
     }
 
     try {
-        const { token, action, payload } = await req.json();
+        // Get token from Authorization header
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) throw new Error('Missing authorization header');
+        const token = authHeader.replace('Bearer ', '');
 
-        if (!token) throw new Error('Missing token');
-
-        // 1. Verify Auth & Get Gym Code
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        const firebaseKey = Deno.env.get('FIREBASE_API_KEY') ?? '';
         const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        const authResponse = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await authResponse.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
+        // Verify Supabase JWT
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+        if (authError || !user) throw new Error("Unauthorized");
+        const userId = user.id;
 
-        // 2. Resolve Internal User ID
-        const { data: userData, error: userError } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-
-        if (userError || !userData) throw new Error("User map not found");
-        const internalUserId = userData.id;
-
+        // Get Admin Profile & Gym Code
         const { data: adminProfile, error: profileError } = await supabaseClient
             .from('profiles')
             .select('gym_code')
-            .eq('user_id', internalUserId)
+            .eq('user_id', userId)
             .single();
 
         if (profileError || !adminProfile?.gym_code) throw new Error("Admin profile or Gym Code not found");
         const gymCode = adminProfile.gym_code;
+
+        // Parse action and payload from body
+        const body = await req.json();
+        const { action, payload } = body;
 
         // 2. Handle Actions
         let result;
@@ -52,11 +42,35 @@ serve(async (req) => {
 
         switch (action) {
             case 'fetch':
-                ({ data: result, error } = await supabaseClient
+                const { data: leads, error: leadsError } = await supabaseClient
                     .from('leads')
                     .select('*')
                     .eq('gym_code', gymCode)
-                    .order('created_at', { ascending: false }));
+                    .order('created_at', { ascending: false });
+
+                if (leadsError) throw leadsError;
+
+                // Fetch trainer names manually
+                const trainerIds = [...new Set(leads.map(l => l.assigned_trainer_id).filter(id => id))];
+                let trainerMap: Record<string, string> = {};
+
+                if (trainerIds.length > 0) {
+                    const { data: trainers } = await supabaseClient
+                        .from('profiles')
+                        .select('user_id, full_name')
+                        .in('user_id', trainerIds);
+
+                    if (trainers) {
+                        trainers.forEach(t => {
+                            trainerMap[t.user_id] = t.full_name;
+                        });
+                    }
+                }
+
+                result = leads.map(l => ({
+                    ...l,
+                    assigned_trainer_name: trainerMap[l.assigned_trainer_id] || null
+                }));
                 break;
 
             case 'create':
@@ -71,11 +85,49 @@ serve(async (req) => {
             case 'update':
                 if (!payload?.id) throw new Error("Missing lead ID for update");
                 const { id, ...updates } = payload;
+
+                // Allow specific fields including assignments
+                const allowedUpdates: any = {};
+                if (updates.name !== undefined) allowedUpdates.name = updates.name;
+                if (updates.phone !== undefined) allowedUpdates.phone = updates.phone;
+                if (updates.email !== undefined) allowedUpdates.email = updates.email;
+                if (updates.source !== undefined) allowedUpdates.source = updates.source;
+                if (updates.status !== undefined) allowedUpdates.status = updates.status;
+                if (updates.notes !== undefined) allowedUpdates.notes = updates.notes;
+                if (updates.assigned_trainer_id !== undefined) allowedUpdates.assigned_trainer_id = updates.assigned_trainer_id;
+                if (updates.address !== undefined) allowedUpdates.address = updates.address;
+                if (updates.lost_reason !== undefined) allowedUpdates.lost_reason = updates.lost_reason;
+
                 ({ data: result, error } = await supabaseClient
                     .from('leads')
-                    .update(updates)
+                    .update(allowedUpdates)
                     .eq('id', id)
-                    .eq('gym_code', gymCode) // Security: Ensure generic update doesn't cross tenants
+                    .eq('gym_code', gymCode)
+                    .select()
+                    .single());
+                break;
+
+            case 'fetch_logs':
+                if (!payload?.lead_id) throw new Error("Missing lead ID");
+                ({ data: result, error } = await supabaseClient
+                    .from('lead_logs')
+                    .select('*')
+                    .eq('lead_id', payload.lead_id)
+                    .eq('gym_code', gymCode)
+                    .order('created_at', { ascending: false }));
+                break;
+
+            case 'add_log':
+                if (!payload?.lead_id || !payload.note) throw new Error("Missing log details");
+                ({ data: result, error } = await supabaseClient
+                    .from('lead_logs')
+                    .insert({
+                        lead_id: payload.lead_id,
+                        note: payload.note,
+                        type: payload.type || 'Note',
+                        created_by: userId,
+                        gym_code: gymCode
+                    })
                     .select()
                     .single());
                 break;

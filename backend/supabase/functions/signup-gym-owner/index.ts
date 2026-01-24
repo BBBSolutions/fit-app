@@ -10,7 +10,7 @@ serve(async (req) => {
     }
 
     try {
-        const { gymName, branchName, membersCount, userId, name, address } = await req.json();
+        const { gymName, branchName, membersCount, userId, name, address, street, city, country, pincode, state, email, phone } = await req.json();
 
         if (!gymName || !userId) {
             throw new Error("Missing required fields: gymName or userId");
@@ -79,13 +79,21 @@ serve(async (req) => {
             // Let's rely on 'gym_details' JSONB column if we can, or just generic fields.
             // For now, let's just update generic fields and maybe 'company_name' if it exists.
             organization_name: gymName,
-            address: address // Add address here
+            gym_branch_name: branchName, // Added
+            members_count: membersCount, // Added
+            email: email, // Added
+            phone_number: phone, // Added
+            address: address, // Keep generic address
+            gym_street: street,
+            gym_city: city,
+            gym_state: state,
+            gym_country: country,
+            gym_pincode: pincode
         };
 
         const { error: updateError } = await supabaseClient
             .from('profiles')
-            .update(updateData)
-            .eq('user_id', userId);
+            .upsert({ user_id: userId, ...updateData });
 
         if (updateError) {
             // If error is about missing columns, might need migration. 

@@ -1,25 +1,89 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Image, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import { Dropdown } from 'react-native-element-dropdown';
+import * as DocumentPicker from 'expo-document-picker';
 import { adminApi } from '../../services/adminApi';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
-const AdminUserOnboardingScreen = ({ navigation }) => {
+const normalizeRole = (role) => {
+    if (!role) return 'Member';
+    return role.toLowerCase() === 'trainer' ? 'Trainer' : 'Member';
+};
+
+
+const AdminUserOnboardingScreen = ({ navigation, route }) => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState('All');
     const [modalVisible, setModalVisible] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
+    const [convertingLeadId, setConvertingLeadId] = useState(null); // Track lead being converted
     const [inviteLink, setInviteLink] = useState('');
     const [inviteRole, setInviteRole] = useState('Member');
     const [generatedLinks, setGeneratedLinks] = useState([]);
+    const [plans, setPlans] = useState([]);
+    const [membershipPlans, setMembershipPlans] = useState([]);
+    const [ptPlans, setPtPlans] = useState([]);
 
     React.useEffect(() => {
-        fetchUsers();
+        fetchData();
     }, []);
+
+    React.useEffect(() => {
+        if (route.params?.prefill) {
+            setCurrentUser({
+                ...route.params.prefill,
+                assignedTrainer: '',
+                role: 'Member'
+            });
+            if (route.params.leadId) {
+                setConvertingLeadId(route.params.leadId);
+            }
+            setModalVisible(true);
+            navigation.setParams({ prefill: null, leadId: null });
+        }
+    }, [route.params]);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const [usersData, plansData] = await Promise.all([
+                adminApi.getUsers(),
+                adminApi.getPlans()
+            ]);
+
+            if (Array.isArray(usersData)) {
+                const mappedUsers = usersData.map(u => ({
+                    id: u.id,
+                    name: u.full_name || 'No Name',
+                    phone: u.phone_number || '-',
+                    email: u.email || '',
+                    role: normalizeRole(u.role),
+                    gymId: u.gym_code || '-',
+                    assignedTrainer: '-',
+                    status: u.status || 'Active',
+                    plan_id: u.plan_id,
+                    pt_plan_id: u.pt_plan_id,
+                    address: u.address || ''
+                }));
+                setUsers(mappedUsers);
+            }
+
+            if (Array.isArray(plansData)) {
+                setPlans(plansData);
+                setMembershipPlans(plansData.filter(p => !p.type || p.type === 'Membership'));
+                setPtPlans(plansData.filter(p => p.type === 'Personal Training'));
+            }
+        } catch (error) {
+            console.error("Failed to fetch data:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -31,10 +95,14 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                     id: u.id,
                     name: u.full_name || 'No Name',
                     phone: u.phone_number || '-',
-                    role: u.role || 'Member',
+                    email: u.email || '',
+                    role: normalizeRole(u.role),
                     gymId: u.gym_code || '-',
                     assignedTrainer: '-', // Relationship not yet fetched
-                    status: 'Active' // Default to Active for now
+                    status: u.status || 'Active',
+                    plan_id: u.plan_id,
+                    pt_plan_id: u.pt_plan_id,
+                    address: u.address || ''
                 }));
                 setUsers(mappedUsers);
             }
@@ -52,7 +120,7 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
     const pendingInvites = 0; // users.filter(u => u.status === 'Pending').length;
 
     const handleAddUser = () => {
-        setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '' });
+        setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '', address: '', plan_id: null, pt_plan_id: null });
         setModalVisible(true);
     };
 
@@ -87,7 +155,10 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                     id: currentUser.id,
                     name: currentUser.name,
                     phone: currentUser.phone,
-                    role: currentUser.role
+                    role: currentUser.role,
+                    address: currentUser.address,
+                    plan_id: currentUser.plan_id,
+                    pt_plan_id: currentUser.pt_plan_id
                 });
 
                 // Refresh list locally or fetch
@@ -98,11 +169,23 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                     name: currentUser.name,
                     phone: currentUser.phone,
                     email: currentUser.email,
-                    role: currentUser.role
+                    role: currentUser.role,
+                    address: currentUser.address,
+                    plan_id: currentUser.plan_id,
+                    pt_plan_id: currentUser.pt_plan_id
                 });
 
                 // Refresh list from backend (which now includes the pending user)
                 await fetchUsers();
+
+                if (convertingLeadId) {
+                    try {
+                        await adminApi.updateLead({ id: convertingLeadId, status: 'Converted' });
+                    } catch (e) {
+                        console.error("Failed to update lead status", e);
+                    }
+                    setConvertingLeadId(null);
+                }
 
                 Alert.alert("Success", "User added. They will appear as 'Pending' until they sign in.");
             }
@@ -118,6 +201,92 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
         const link = `https://fitapp.com/invite/${Math.random().toString(36).substring(7)}`;
         setInviteLink(link);
         setGeneratedLinks([...generatedLinks, { link, role: inviteRole, date: new Date().toLocaleDateString() }]);
+    };
+
+    const handleDownloadSample = () => {
+        const header = "name,phone,email,role,address,assignedTrainer\n";
+        const sample = "John Doe,1234567890,john@example.com,Member,123 Main St,\nJane Smith,0987654321,jane@example.com,Trainer,,\n";
+        const csvContent = header + sample;
+
+        if (Platform.OS === 'web') {
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'fitapp_users_sample.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            Alert.alert("Info", "Sample download not implemented for mobile yet. Please copy:\n" + csvContent);
+        }
+    };
+
+    const handleFileUpload = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['text/csv', 'application/vnd.ms-excel', 'text/comma-separated-values', 'text/plain'],
+                copyToCacheDirectory: true
+            });
+
+            if (result.canceled) return;
+
+            const file = result.assets[0];
+            const content = await fetch(file.uri).then(r => r.text());
+
+            const rows = content.split('\n').map(row => row.trim()).filter(row => row);
+            if (rows.length < 2) return;
+
+            const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+
+            const usersToImport = rows.slice(1).map(row => {
+                const values = row.split(',').map(v => v.trim());
+                const user = {};
+                headers.forEach((h, i) => {
+                    let key = h;
+                    if (key === 'full name') key = 'name';
+                    user[key] = values[i] || '';
+                });
+                return user;
+            }).filter(u => u.name && (u.phone || u.email));
+
+            if (usersToImport.length === 0) {
+                Alert.alert("Error", "No valid users found in CSV.");
+                return;
+            }
+
+            if (Platform.OS === 'web') {
+                if (confirm(`Found ${usersToImport.length} users. Import them?`)) {
+                    await performBulkImport(usersToImport);
+                }
+            } else {
+                Alert.alert(
+                    "Confirm Import",
+                    `Found ${usersToImport.length} users. Import them?`,
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Import", onPress: () => performBulkImport(usersToImport) }
+                    ]
+                );
+            }
+
+        } catch (error) {
+            console.error("File upload error", error);
+            Alert.alert("Error", "Failed to upload file");
+        }
+    };
+
+    const performBulkImport = async (usersToImport) => {
+        setLoading(true);
+        try {
+            await adminApi.bulkCreateUsers(usersToImport);
+            Alert.alert("Success", "Users imported successfully");
+            fetchUsers();
+        } catch (error) {
+            Alert.alert("Error", "Import failed: " + error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const filteredUsers = users.filter(user => {
@@ -212,12 +381,12 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                         <View style={styles.uploadArea}>
                             <Ionicons name="cloud-upload-outline" size={40} color="#CBD5E0" />
                             <Text style={styles.uploadText}>Drag & drop CSV file here or click to upload</Text>
-                            <Text style={styles.uploadHint}>Supported fields: name, phone, role, email, assignedTrainer</Text>
-                            <TouchableOpacity style={styles.outlineButton}>
+                            <Text style={styles.uploadHint}>Supported fields: name, phone, email, role, address, assignedTrainer</Text>
+                            <TouchableOpacity style={styles.outlineButton} onPress={handleFileUpload}>
                                 <Text style={styles.outlineButtonText}>Upload CSV File</Text>
                             </TouchableOpacity>
                         </View>
-                        <TouchableOpacity style={styles.linkButton}>
+                        <TouchableOpacity style={styles.linkButton} onPress={handleDownloadSample}>
                             <Text style={styles.linkButtonText}>Download sample CSV</Text>
                         </TouchableOpacity>
                     </View>
@@ -385,6 +554,14 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                             keyboardType="email-address"
                         />
 
+                        <Text style={styles.label}>Address</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={currentUser?.address}
+                            onChangeText={(t) => setCurrentUser({ ...currentUser, address: t })}
+                            placeholder="Enter full address"
+                        />
+
                         <Text style={styles.label}>Role</Text>
                         <View style={styles.roleToggle}>
                             <TouchableOpacity
@@ -403,6 +580,42 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
 
                         {currentUser?.role === 'Member' && (
                             <>
+                                <Text style={styles.label}>Subscription Plan</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Dropdown
+                                        style={styles.dropdown}
+                                        placeholderStyle={styles.placeholderStyle}
+                                        selectedTextStyle={styles.selectedTextStyle}
+                                        data={membershipPlans}
+                                        maxHeight={300}
+                                        labelField="name"
+                                        valueField="id"
+                                        placeholder="Select Main Membership (Required)"
+                                        value={currentUser?.plan_id}
+                                        onChange={item => {
+                                            setCurrentUser({ ...currentUser, plan_id: item.id });
+                                        }}
+                                    />
+                                </View>
+
+                                <Text style={styles.label}>Personal Training Plan (Optional)</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Dropdown
+                                        style={styles.dropdown}
+                                        placeholderStyle={styles.placeholderStyle}
+                                        selectedTextStyle={styles.selectedTextStyle}
+                                        data={ptPlans}
+                                        maxHeight={300}
+                                        labelField="name"
+                                        valueField="id"
+                                        placeholder="Select PT Plan"
+                                        value={currentUser?.pt_plan_id}
+                                        onChange={item => {
+                                            setCurrentUser({ ...currentUser, pt_plan_id: item.id });
+                                        }}
+                                    />
+                                </View>
+
                                 <Text style={styles.label}>Assigned Trainer</Text>
                                 <TextInput
                                     style={styles.input}
@@ -422,9 +635,9 @@ const AdminUserOnboardingScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
                     </View>
-                </View>
-            </Modal>
-        </View>
+                </View >
+            </Modal >
+        </View >
     );
 };
 
@@ -846,6 +1059,25 @@ const styles = StyleSheet.create({
         padding: 12,
         marginBottom: 16,
         fontSize: 16,
+    },
+    pickerContainer: {
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderRadius: 8,
+        marginBottom: 16,
+        backgroundColor: '#FFF',
+    },
+    dropdown: {
+        height: 50,
+        paddingHorizontal: 12,
+    },
+    placeholderStyle: {
+        fontSize: 16,
+        color: '#A0AEC0',
+    },
+    selectedTextStyle: {
+        fontSize: 16,
+        color: '#2D3748',
     },
     modalActions: {
         flexDirection: 'row',

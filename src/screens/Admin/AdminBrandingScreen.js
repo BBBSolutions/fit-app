@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Platform, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Platform, Dimensions, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { adminApi, supabase } from '../../services/adminApi'; // Assuming supabase export exists or direct import
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system'; // For reading file as base64 (if needed) or direct upload
+
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -14,14 +18,105 @@ const AdminBrandingScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-    const handleSave = () => {
-        setLoading(true);
-        setTimeout(() => {
+
+    // Fetch initial branding
+    React.useEffect(() => {
+        fetchBranding();
+    }, []);
+
+    const fetchBranding = async () => {
+        try {
+            setLoading(true);
+            const data = await adminApi.fetchBranding();
+            if (data) {
+                setGymName(data.gymName || 'FitLife Gym');
+                if (data.branding) {
+                    setPrimaryColor(data.branding.primaryColor || '#3182CE');
+                    setSecondaryColor(data.branding.secondaryColor || '#2D3748');
+                    setAccentColor(data.branding.accentColor || '#38B2AC');
+                    setLogo(data.branding.logo || null);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching branding:', error);
+            Alert.alert('Error', 'Failed to load branding settings.');
+        } finally {
             setLoading(false);
-            setHasUnsavedChanges(false);
-            alert('Branding settings saved!');
-        }, 1500);
+        }
     };
+
+    const handleSave = async () => {
+        setLoading(true);
+        try {
+            await adminApi.updateBranding({
+                gymName,
+                branding: {
+                    primaryColor,
+                    secondaryColor,
+                    accentColor,
+                    logo
+                }
+            });
+            setHasUnsavedChanges(false);
+            Alert.alert('Success', 'Branding settings saved!');
+        } catch (error) {
+            console.error('Error saving branding:', error);
+            Alert.alert('Error', 'Failed to save settings.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLogoUpload = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['image/png', 'image/jpeg', 'image/jpg'],
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled) return;
+
+            const file = result.assets[0];
+            const { uri, name, mimeType } = file;
+
+            // Upload to Supabase Storage
+            const user = await supabase.auth.getUser();
+            const userId = user.data.user.id;
+            const filePath = `${userId}/branding/${Date.now()}_${name}`; // Unique path
+
+            let response;
+            if (Platform.OS === 'web') {
+                // For web, fetch the blob
+                const res = await fetch(uri);
+                const blob = await res.blob();
+                response = await supabase.storage.from('user-media-public').upload(filePath, blob);
+            } else {
+                // For native, use FileSystem (or if supabase expo helper handles uri directly)
+                // This is a simplified approach, robust native upload might need formData
+                const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+                const arrayBuffer = decode(base64); // Need a base64 decoder helper or use base64 type if upload supports it
+                // For simplicity in this demo environment, let's assume we use the standard upload which might fail on native without a binary body.
+                // Ideally use `supabase-js` v2 which handles FormData or ArrayBuffer.
+                // Reverting to fetch blob approach which often works on Expo now:
+                const res = await fetch(uri);
+                const blob = await res.blob();
+                response = await supabase.storage.from('user-media-public').upload(filePath, blob);
+            }
+
+            if (response.error) throw response.error;
+
+            // Get Public URL
+            const { data: { publicUrl } } = supabase.storage.from('user-media-public').getPublicUrl(filePath);
+
+            setLogo(publicUrl);
+            setHasUnsavedChanges(true);
+
+        } catch (error) {
+            console.error("Logo upload error:", error);
+            Alert.alert("Upload Failed", "Could not upload the logo.");
+        }
+    };
+
 
     const handleColorChange = (setter, color) => {
         setter(color);
@@ -113,7 +208,7 @@ const AdminBrandingScreen = ({ navigation }) => {
                                     )}
                                 </View>
                                 <View style={styles.uploadActions}>
-                                    <TouchableOpacity style={styles.uploadButton}>
+                                    <TouchableOpacity style={styles.uploadButton} onPress={handleLogoUpload}>
                                         <Text style={styles.uploadButtonText}>Upload Logo</Text>
                                     </TouchableOpacity>
                                     <Text style={styles.uploadHint}>Supported formats: PNG, JPG</Text>

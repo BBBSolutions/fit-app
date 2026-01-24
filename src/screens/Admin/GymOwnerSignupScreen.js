@@ -1,33 +1,47 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAuth, PhoneAuthProvider, signInWithCredential, signInAnonymously } from 'firebase/auth'; // Fix: Import signInAnonymously
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { firebaseConfig } from '../../config/firebase';
+import { supabase } from '../../config/supabaseAuth';
 import { adminApi } from '../../services/adminApi';
 import { api } from '../../services/api';
+
+import { Country, State, City } from 'country-state-city';
+import { Dropdown } from 'react-native-element-dropdown';
+
+const countriesData = Country.getAllCountries().map(c => ({ label: c.name, value: c.isoCode }));
 
 const GymOwnerSignupScreen = ({ navigation }) => {
     const [step, setStep] = useState(1); // 1: Details, 2: Phone Verify, 3: Success
     const [loading, setLoading] = useState(false);
+    const [isFocus, setIsFocus] = useState(false);
+
+    // Dropdown Data States
+    const [statesData, setStatesData] = useState([]);
+    const [citiesData, setCitiesData] = useState([]);
+
+    // Selection Codes (for logic)
+    const [selectedCountryCode, setSelectedCountryCode] = useState(null);
+    const [selectedStateCode, setSelectedStateCode] = useState(null);
 
     // Form Stats
     const [formData, setFormData] = useState({
         fullName: '',
         gymName: '',
         branchName: '',
-        address: '', // New Field
+        street: '',
+        city: '',
+        state: '',
+        country: '',
+        pincode: '',
+        address: '', // Consolidate or keep separate based on backend logic? Backend uses separate + generic.
         email: '',
         membersCount: '',
         phone: ''
     });
 
-    // Auth Stats
-    const [verificationId, setVerificationId] = useState(null);
+    // Auth State
     const [verificationCode, setVerificationCode] = useState('');
     const [generatedGymCode, setGeneratedGymCode] = useState('');
-
-    const recaptchaVerifier = useRef(null);
 
     const handleSendOtp = async () => {
         if (!formData.fullName || !formData.gymName || !formData.phone) {
@@ -37,14 +51,14 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
         setLoading(true);
         try {
-            const auth = getAuth();
-            const phoneProvider = new PhoneAuthProvider(auth);
-            const verificationId = await phoneProvider.verifyPhoneNumber(
-                formData.phone,
-                recaptchaVerifier.current
-            );
-            setVerificationId(verificationId);
+            const { error } = await supabase.auth.signInWithOtp({
+                phone: formData.phone,
+            });
+
+            if (error) throw error;
+
             setStep(2);
+            Alert.alert('Success', 'OTP sent to your phone!');
         } catch (err) {
             console.error("Phone Auth Error:", err);
             Alert.alert('Error', `Failed to send OTP: ${err.message}`);
@@ -53,31 +67,58 @@ const GymOwnerSignupScreen = ({ navigation }) => {
         }
     };
 
-    // New Function: Dev Signup Bypass
+    // Dev Signup Bypass (uses anonymous signup)
     const handleDevSignup = async () => {
         if (!formData.fullName || !formData.gymName) {
             Alert.alert('Missing Fields', 'Please fill in Name and Gym Name.');
             return;
         }
+
         setLoading(true);
         try {
-            const auth = getAuth();
-            // Anonymous Login to bypass billing/SMS requirements
-            const userCredential = await signInAnonymously(auth);
+            const devEmail = 'dev_gym_owner@test.com';
+            const devPassword = 'dev_password_123';
 
-            // 1. Create User in Backend
-            const token = await userCredential.user.getIdToken();
-            const userRes = await api.authVerify(token);
+            // 1. Try to login first
+            let { data, error } = await supabase.auth.signInWithPassword({
+                email: devEmail,
+                password: devPassword
+            });
 
-            // 2. Register Gym
+            // 2. If login fails (user doesn't exist or wrong password), try to sign up
+            if (error || !data.user) {
+                console.log("Dev user not found or login failed, trying to create...", error?.message);
+                const signUpRes = await supabase.auth.signUp({
+                    email: devEmail,
+                    password: devPassword
+                });
+
+                if (signUpRes.error) {
+                    // If existing user (but maybe wrong password in first step), throw original error
+                    if (signUpRes.error.message.includes("already registered")) {
+                        throw error || new Error("User exists but login failed");
+                    }
+                    throw signUpRes.error;
+                }
+                data = signUpRes.data;
+            }
+
+            if (!data.user) throw new Error("Failed to authenticate dev user");
+
             const result = await adminApi.signupGymOwner({
                 name: formData.fullName,
-                email: formData.email,
+                email: formData.email || devEmail,
                 gymName: formData.gymName,
                 branchName: formData.branchName,
                 membersCount: formData.membersCount,
-                address: formData.address, // Pass address
-                userId: userRes.user_id
+                address: formData.address,
+                street: formData.street,
+                city: formData.city,
+                state: formData.state,
+                country: formData.country,
+                pincode: formData.pincode,
+                userId: data.user.id,
+                phone: formData.phone // Added phone
             });
 
             console.log("Dev Signup Success:", result);
@@ -85,7 +126,15 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             setStep(3);
         } catch (err) {
             console.error("Dev Signup Error:", err);
-            Alert.alert('Error', `Dev Signup Failed: ${err.message}`);
+            if (err.message && err.message.includes("is invalid")) {
+                Alert.alert(
+                    'Dev Login Config Required',
+                    'Failed to use Dev Email. Please ensure the "Email" provider is ENABLED in Supabase Dashboard -> Authentication -> Providers.',
+                    [{ text: 'OK' }]
+                );
+            } else {
+                Alert.alert('Error', `Dev Signup Failed: ${err.message}`);
+            }
         } finally {
             setLoading(false);
         }
@@ -99,23 +148,30 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
         setLoading(true);
         try {
-            const auth = getAuth();
-            const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
-            const userCredential = await signInWithCredential(auth, credential);
+            // Verify Supabase OTP
+            const { data, error } = await supabase.auth.verifyOtp({
+                phone: formData.phone,
+                token: verificationCode,
+                type: 'sms'
+            });
 
-            // 1. Create User in Backend
-            const token = await userCredential.user.getIdToken();
-            const userRes = await api.authVerify(token); // Ensures app_users record exists
+            if (error) throw error;
 
-            // 2. Register Gym & Promote to Admin (Custom Endpoint)
+            // Register Gym & Promote to Admin
             const result = await adminApi.signupGymOwner({
                 name: formData.fullName,
                 email: formData.email,
                 gymName: formData.gymName,
                 branchName: formData.branchName,
                 membersCount: formData.membersCount,
-                address: formData.address, // Pass address
-                userId: userRes.user_id
+                address: formData.address,
+                street: formData.street,
+                city: formData.city,
+                state: formData.state,
+                country: formData.country,
+                pincode: formData.pincode,
+                userId: data.user.id,
+                phone: formData.phone // Added phone
             });
 
             console.log("Gym Owner Signup Success:", result);
@@ -166,13 +222,97 @@ const GymOwnerSignupScreen = ({ navigation }) => {
                 onChangeText={(t) => setFormData({ ...formData, branchName: t })}
             />
 
-            <Text style={styles.label}>Address (Optional)</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="123 Main St, City"
-                value={formData.address}
-                onChangeText={(t) => setFormData({ ...formData, address: t })}
+            <Text style={styles.label}>Country <Text style={styles.req}>*</Text></Text>
+            <Dropdown
+                style={[styles.dropdown, isFocus && { borderColor: 'blue' }]}
+                placeholderStyle={styles.placeholderStyle}
+                selectedTextStyle={styles.selectedTextStyle}
+                inputSearchStyle={styles.inputSearchStyle}
+                data={countriesData}
+                search
+                maxHeight={300}
+                labelField="label"
+                valueField="value"
+                placeholder={!isFocus ? 'Select Country' : '...'}
+                searchPlaceholder="Search..."
+                value={selectedCountryCode}
+                onFocus={() => setIsFocus(true)}
+                onBlur={() => setIsFocus(false)}
+                onChange={item => {
+                    setSelectedCountryCode(item.value);
+                    setFormData({ ...formData, country: item.label, state: '', city: '' });
+                    setStatesData(State.getStatesOfCountry(item.value).map(s => ({ label: s.name, value: s.isoCode })));
+                    setCitiesData([]);
+                    setSelectedStateCode(null);
+                    setIsFocus(false);
+                }}
             />
+
+            <View style={styles.row}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.label}>State <Text style={styles.req}>*</Text></Text>
+                    <Dropdown
+                        style={[styles.dropdown]}
+                        placeholderStyle={styles.placeholderStyle}
+                        selectedTextStyle={styles.selectedTextStyle}
+                        inputSearchStyle={styles.inputSearchStyle}
+                        data={statesData}
+                        search
+                        maxHeight={300}
+                        labelField="label"
+                        valueField="value"
+                        placeholder="Select State"
+                        searchPlaceholder="Search..."
+                        value={selectedStateCode}
+                        onChange={item => {
+                            setSelectedStateCode(item.value);
+                            setFormData({ ...formData, state: item.label, city: '' });
+                            setCitiesData(City.getCitiesOfState(selectedCountryCode, item.value).map(c => ({ label: c.name, value: c.name })));
+                        }}
+                    />
+                </View>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.label}>City <Text style={styles.req}>*</Text></Text>
+                    <Dropdown
+                        style={[styles.dropdown]}
+                        placeholderStyle={styles.placeholderStyle}
+                        selectedTextStyle={styles.selectedTextStyle}
+                        inputSearchStyle={styles.inputSearchStyle}
+                        data={citiesData}
+                        search
+                        maxHeight={300}
+                        labelField="label"
+                        valueField="value" // City doesn't have isoCode usually, use name
+                        placeholder="Select City"
+                        searchPlaceholder="Search..."
+                        value={formData.city} // We store Name directly
+                        onChange={item => {
+                            setFormData({ ...formData, city: item.value });
+                        }}
+                    />
+                </View>
+            </View>
+
+            <View style={styles.row}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.label}>Street Address <Text style={styles.req}>*</Text></Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="123 Main St"
+                        value={formData.street}
+                        onChangeText={(t) => setFormData({ ...formData, street: t })}
+                    />
+                </View>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.label}>Pincode <Text style={styles.req}>*</Text></Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="10001"
+                        value={formData.pincode}
+                        onChangeText={(t) => setFormData({ ...formData, pincode: t })}
+                    />
+                </View>
+            </View>
 
             <View style={styles.row}>
                 <View style={{ flex: 1, marginRight: 8 }}>
@@ -266,10 +406,6 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
     return (
         <View style={styles.container}>
-            <FirebaseRecaptchaVerifierModal
-                ref={recaptchaVerifier}
-                firebaseConfig={firebaseConfig}
-            />
             <TouchableOpacity style={styles.backButtonTop} onPress={() => navigation.goBack()}>
                 <Ionicons name="close" size={24} color="#4A5568" />
             </TouchableOpacity>
@@ -291,6 +427,32 @@ const styles = StyleSheet.create({
 
     label: { fontSize: 14, fontWeight: '600', color: '#4A5568', marginBottom: 8 },
     req: { color: '#E53E3E' },
+    // Dropdown Styles
+    dropdown: {
+        height: 50,
+        borderColor: '#E2E8F0',
+        borderWidth: 1,
+        borderRadius: 8,
+        paddingHorizontal: 16,
+        backgroundColor: '#F7FAFC',
+        marginBottom: 20,
+    },
+    placeholderStyle: {
+        fontSize: 16,
+        color: '#A0AEC0',
+    },
+    selectedTextStyle: {
+        fontSize: 16,
+        color: '#2D3748',
+    },
+    inputSearchStyle: {
+        height: 40,
+        fontSize: 16,
+    },
+    itemTextStyle: {
+        fontSize: 16,
+        color: '#2D3748',
+    },
     input: { height: 50, borderColor: '#E2E8F0', borderWidth: 1, borderRadius: 8, paddingHorizontal: 16, marginBottom: 20, backgroundColor: '#F7FAFC', fontSize: 16 },
 
     row: { flexDirection: 'row' },

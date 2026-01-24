@@ -1,16 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
-import { getAuth, PhoneAuthProvider, signInWithCredential, signInAnonymously } from 'firebase/auth';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { firebaseConfig } from '../../config/firebase';
+import { supabase } from '../../config/supabaseAuth';
 
 import { api } from '../../services/api';
 
 const AdminLoginScreen = ({ navigation }) => {
     const [phoneNumber, setPhoneNumber] = useState('');
-    const [verificationId, setVerificationId] = useState(null);
+    const [otpSent, setOtpSent] = useState(false);
     const [verificationCode, setVerificationCode] = useState('');
-    const recaptchaVerifier = useRef(null);
 
     const handleSendOtp = async () => {
         if (phoneNumber.trim() === '') {
@@ -18,14 +15,14 @@ const AdminLoginScreen = ({ navigation }) => {
             return;
         }
         try {
-            const auth = getAuth();
-            const phoneProvider = new PhoneAuthProvider(auth);
-            const verificationId = await phoneProvider.verifyPhoneNumber(
-                phoneNumber,
-                recaptchaVerifier.current
-            );
-            setVerificationId(verificationId);
-            Alert.alert('Success', 'OTP sent!');
+            const { error } = await supabase.auth.signInWithOtp({
+                phone: phoneNumber,
+            });
+
+            if (error) throw error;
+
+            setOtpSent(true);
+            Alert.alert('Success', 'OTP sent to your phone!');
         } catch (err) {
             console.error("Phone Auth Error:", err);
             Alert.alert('Error', `Failed to send OTP: ${err.message}`);
@@ -38,14 +35,15 @@ const AdminLoginScreen = ({ navigation }) => {
             return;
         }
         try {
-            const auth = getAuth();
-            const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
-            const userCredential = await signInWithCredential(auth, credential);
+            const { data, error } = await supabase.auth.verifyOtp({
+                phone: phoneNumber,
+                token: verificationCode,
+                type: 'sms'
+            });
 
-            // Backend Verification (Creates User/Profile)
-            const token = await userCredential.user.getIdToken();
-            await api.authVerify(token);
+            if (error) throw error;
 
+            console.log("Admin Login Success");
             navigation.replace('AdminDashboard');
         } catch (err) {
             console.error("Verification Error:", err);
@@ -55,12 +53,9 @@ const AdminLoginScreen = ({ navigation }) => {
 
     const handleDevLogin = async () => {
         try {
-            const auth = getAuth();
-            const userCredential = await signInAnonymously(auth);
+            const { data, error } = await supabase.auth.signInAnonymously();
 
-            // Backend Verification (Creates User/Profile)
-            const token = await userCredential.user.getIdToken();
-            await api.authVerify(token);
+            if (error) throw error;
 
             console.log("Admin Dev Login Success");
             navigation.replace('AdminDashboard');
@@ -71,15 +66,11 @@ const AdminLoginScreen = ({ navigation }) => {
 
     return (
         <View style={styles.container}>
-            <FirebaseRecaptchaVerifierModal
-                ref={recaptchaVerifier}
-                firebaseConfig={firebaseConfig}
-            />
             <View style={styles.card}>
                 <Text style={styles.title}>Admin Portal</Text>
                 <Text style={styles.subtitle}>Login to access the dashboard</Text>
 
-                {!verificationId ? (
+                {!otpSent ? (
                     <>
                         <Text style={styles.label}>Phone Number</Text>
                         <TextInput
@@ -102,7 +93,7 @@ const AdminLoginScreen = ({ navigation }) => {
                             keyboardType="number-pad"
                         />
                         <Button title="Verify & Login" onPress={handleVerifyOtp} color="#3182CE" />
-                        <TouchableOpacity onPress={() => setVerificationId(null)} style={{ marginTop: 12 }}>
+                        <TouchableOpacity onPress={() => setOtpSent(false)} style={{ marginTop: 12 }}>
                             <Text style={{ color: '#3182CE', textAlign: 'center' }}>Use a different number</Text>
                         </TouchableOpacity>
                     </>

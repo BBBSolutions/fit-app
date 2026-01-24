@@ -71,10 +71,9 @@ const TrainerDetails = ({ navigation }) => {
     };
 
     const handleLogout = async () => {
-        const { getAuth, signOut } = require('firebase/auth');
-        const auth = getAuth();
+        const { supabase } = require('../../config/supabaseAuth');
         try {
-            await signOut(auth);
+            await supabase.auth.signOut();
             // For web compatibility
             if (typeof window !== 'undefined') {
                 window.location.reload();

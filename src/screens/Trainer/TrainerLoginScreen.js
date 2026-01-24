@@ -1,15 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
-import { getAuth, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
-import { firebaseConfig } from '../../config/firebase';
 
 const TrainerLoginScreen = ({ navigation }) => {
     const [phoneNumber, setPhoneNumber] = useState('');
-    const [verificationId, setVerificationId] = useState(null);
+    const [otpSent, setOtpSent] = useState(false);
     const [verificationCode, setVerificationCode] = useState('');
-    const recaptchaVerifier = useRef(null);
 
     const handleSendOtp = async () => {
         if (phoneNumber.trim() === '') {
@@ -18,13 +15,13 @@ const TrainerLoginScreen = ({ navigation }) => {
         }
 
         try {
-            const auth = getAuth();
-            const phoneProvider = new PhoneAuthProvider(auth);
-            const verificationId = await phoneProvider.verifyPhoneNumber(
-                phoneNumber,
-                recaptchaVerifier.current
-            );
-            setVerificationId(verificationId);
+            const { error } = await supabase.auth.signInWithOtp({
+                phone: phoneNumber,
+            });
+
+            if (error) throw error;
+
+            setOtpSent(true);
             Alert.alert('Success', 'OTP sent!');
         } catch (err) {
             console.error("Phone Auth Error:", err);
@@ -39,69 +36,49 @@ const TrainerLoginScreen = ({ navigation }) => {
         }
 
         try {
-            const credential = PhoneAuthProvider.credential(
-                verificationId,
-                verificationCode
-            );
-            const auth = getAuth();
-            const userCredential = await signInWithCredential(auth, credential);
-            console.log("Trainer Phone Auth Success:", userCredential.user.uid);
+            const { data, error } = await supabase.auth.verifyOtp({
+                phone: phoneNumber,
+                token: verificationCode,
+                type: 'sms'
+            });
 
-            // Backend Verification & Navigation
-            handleBackendVerify(userCredential.user);
+            if (error) throw error;
 
+            // Check Profile Completion
+            try {
+                const profile = await api.getProfile();
+                console.log("Login Profile Check:", profile);
+
+                if (profile && profile.fullName && profile.primarySpecialization) {
+                    navigation.replace('TrainerMainApp');
+                } else {
+                    navigation.navigate('TrainerOnboarding');
+                }
+            } catch (profileErr) {
+                console.log("Profile check failed, going to onboarding:", profileErr);
+                navigation.navigate('TrainerOnboarding');
+            }
         } catch (err) {
             console.error("Verification Error:", err);
             Alert.alert('Error', `Invalid OTP: ${err.message}`);
         }
     };
 
-    const handleBackendVerify = (user) => {
-        if (user) {
-            user.getIdToken().then(token => {
-                api.authVerify(token).then(async () => {
-                    try {
-                        // Check Profile Completion
-                        const profile = await api.getProfile();
-                        console.log("Login Profile Check:", profile);
-
-                        if (profile && profile.fullName && profile.primarySpecialization) {
-                            navigation.replace('TrainerMainApp'); // Use replace to prevent back button
-                        } else {
-                            navigation.navigate('TrainerOnboarding');
-                        }
-                    } catch (profileErr) {
-                        console.log("Profile check failed, going to onboarding:", profileErr);
-                        navigation.navigate('TrainerOnboarding');
-                    }
-                }).catch(err => {
-                    console.error("Backend Verification Failed:", err);
-                    Alert.alert("Login Error", "Could not verify trainer with backend.");
-                });
-            });
-        }
-    };
-
     // Dev Helper
     const handleGuestLogin = () => {
-        const { signInAnonymously, getAuth, signOut } = require('firebase/auth');
-        const auth = getAuth();
-        signOut(auth).then(() => {
-            signInAnonymously(auth)
-                .then((cred) => handleBackendVerify(cred.user))
-                .catch(e => Alert.alert("Auth Failed", e.message));
-        });
+        supabase.auth.signInAnonymously()
+            .then(({ data, error }) => {
+                if (error) throw error;
+                navigation.navigate('TrainerOnboarding');
+            })
+            .catch(e => Alert.alert("Auth Failed", e.message));
     };
 
     return (
         <View style={styles.container}>
-            <FirebaseRecaptchaVerifierModal
-                ref={recaptchaVerifier}
-                firebaseConfig={firebaseConfig}
-            />
             <Text style={styles.text}>Trainer Login</Text>
 
-            {!verificationId ? (
+            {!otpSent ? (
                 <>
                     <TextInput
                         style={styles.input}
@@ -123,7 +100,7 @@ const TrainerLoginScreen = ({ navigation }) => {
                         keyboardType="number-pad"
                     />
                     <Button title="Verify OTP" onPress={handleVerifyOtp} />
-                    <TouchableOpacity onPress={() => setVerificationId(null)} style={{ marginTop: 10 }}>
+                    <TouchableOpacity onPress={() => setOtpSent(false)} style={{ marginTop: 10 }}>
                         <Text style={{ color: 'blue' }}>Wrong number? Try again</Text>
                     </TouchableOpacity>
                 </>

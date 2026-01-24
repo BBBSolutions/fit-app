@@ -11,8 +11,26 @@ ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE public.app_users DROP COLUMN IF EXISTS firebase_uid CASCADE;
 
 -- Step 4: Modify the id column to directly reference auth.users
--- NOTE: This will clear existing users! (Clean break migration)
-ALTER TABLE public.app_users DROP CONSTRAINT IF EXISTS app_users_pkey;
+-- NOTE: This will clear existing users AND all related data! (Clean break migration)
+-- Using CASCADE to drop all foreign key constraints
+
+-- First, drop all dependent foreign key constraints explicitly to be safe
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_user_id_fkey CASCADE;
+ALTER TABLE public.workouts DROP CONSTRAINT IF EXISTS workouts_user_id_fkey CASCADE;
+ALTER TABLE public.sessions DROP CONSTRAINT IF EXISTS sessions_user_id_fkey CASCADE;
+ALTER TABLE public.media DROP CONSTRAINT IF EXISTS media_user_id_fkey CASCADE;
+ALTER TABLE public.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_user_id_fkey CASCADE;
+ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_user_id_fkey CASCADE;
+ALTER TABLE public.trainer_clients DROP CONSTRAINT IF EXISTS trainer_clients_trainer_id_fkey CASCADE;
+ALTER TABLE public.trainer_clients DROP CONSTRAINT IF EXISTS trainer_clients_client_id_fkey CASCADE;
+ALTER TABLE public.workout_assignments DROP CONSTRAINT IF EXISTS workout_assignments_trainer_id_fkey CASCADE;
+ALTER TABLE public.workout_assignments DROP CONSTRAINT IF EXISTS workout_assignments_client_id_fkey CASCADE;
+ALTER TABLE public.diet_logs DROP CONSTRAINT IF EXISTS diet_logs_user_id_fkey CASCADE;
+ALTER TABLE public.workout_logs DROP CONSTRAINT IF EXISTS workout_logs_user_id_fkey CASCADE;
+ALTER TABLE public.measurement_logs DROP CONSTRAINT IF EXISTS measurement_logs_user_id_fkey CASCADE;
+ALTER TABLE public.content DROP CONSTRAINT IF EXISTS content_author_id_fkey CASCADE;
+
+-- Now drop the app_users table
 DROP TABLE IF EXISTS public.app_users CASCADE;
 
 -- Recreate app_users with direct reference to auth.users

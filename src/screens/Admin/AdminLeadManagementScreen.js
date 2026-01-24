@@ -7,21 +7,30 @@ const AdminLeadManagementScreen = ({ navigation }) => {
     const [selectedLead, setSelectedLead] = useState(null);
     const [detailsPanelVisible, setDetailsPanelVisible] = useState(false);
     const [addLeadModalVisible, setAddLeadModalVisible] = useState(false);
+    const [demoModalVisible, setDemoModalVisible] = useState(false); // Modal for assigning trainer
+
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('All');
-    const [filterSource, setFilterSource] = useState('All');
 
     const [leads, setLeads] = useState([]);
+    const [trainers, setTrainers] = useState([]); // List of trainers for assignment
+    const [selectedTrainerId, setSelectedTrainerId] = useState(null); // Selected trainer for assignment
     const [isLoading, setIsLoading] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
+
+    // Logs & Lost Reason
+    const [logs, setLogs] = useState([]);
+    const [logModalVisible, setLogModalVisible] = useState(false);
+    const [lostModalVisible, setLostModalVisible] = useState(false);
+    const [logNote, setLogNote] = useState('');
+    const [lostReason, setLostReason] = useState('');
 
     // New Lead State
-    const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '' });
-
-    // Automations (Local preferences for now)
-    const [automations, setAutomations] = useState({ welcome: true, autoAssign: false, followUp: true, scoring: true });
+    const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '', address: '' });
 
     useEffect(() => {
         fetchLeads();
+        fetchTrainers();
     }, []);
 
     const fetchLeads = async () => {
@@ -34,6 +43,28 @@ const AdminLeadManagementScreen = ({ navigation }) => {
             // Alert.alert("Error", "Failed to load leads");
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const fetchLogs = async (leadId) => {
+        try {
+            const data = await adminApi.fetchLeadLogs(leadId);
+            setLogs(data || []);
+        } catch (error) {
+            console.error("Failed to fetch logs", error);
+            setLogs([]);
+        }
+    };
+
+    const fetchTrainers = async () => {
+        try {
+            const users = await adminApi.getUsers();
+            if (users) {
+                const trainerList = users.filter(u => u.role === 'trainer' || u.role === 'Trainer');
+                setTrainers(trainerList);
+            }
+        } catch (error) {
+            console.error("Failed to fetch trainers", error);
         }
     };
 
@@ -57,24 +88,92 @@ const AdminLeadManagementScreen = ({ navigation }) => {
         }
     };
 
-    // Calculate funnel counts dynamically from real data
+    const handleUpdateStatus = async (leadId, newStatus, extraUpdates = {}) => {
+        setIsUpdating(true);
+        try {
+            const updatedLead = await adminApi.updateLead({ id: leadId, status: newStatus, ...extraUpdates });
+            setLeads(leads.map(l => l.id === leadId ? { ...l, ...updatedLead } : l));
+            if (selectedLead && selectedLead.id === leadId) {
+                setSelectedLead({ ...selectedLead, ...updatedLead });
+            }
+            Alert.alert("Success", `Lead status updated to ${newStatus}`);
+        } catch (error) {
+            console.error("Update failed", error);
+            Alert.alert("Error", "Failed to update lead status");
+        } finally {
+            setIsUpdating(false);
+            setDemoModalVisible(false);
+            setLostModalVisible(false);
+            setDetailsPanelVisible(false); // Close panel on success usually better UX
+        }
+    };
+
+    const handleAddLog = async () => {
+        if (!logNote.trim()) return;
+        try {
+            await adminApi.addLeadLog({ lead_id: selectedLead.id, note: logNote, type: 'Note' });
+            setLogNote('');
+            setLogModalVisible(false);
+            fetchLogs(selectedLead.id);
+        } catch (error) {
+            Alert.alert("Error", "Failed to add log");
+        }
+    };
+
+    const handleConfirmLost = () => {
+        if (!lostReason.trim()) {
+            Alert.alert("Required", "Please provide a reason.");
+            return;
+        }
+        handleUpdateStatus(selectedLead.id, 'Lost', { lost_reason: lostReason });
+    };
+
+    const handleMoveToDemo = () => {
+        setDemoModalVisible(true);
+        setDetailsPanelVisible(false); // Switch modals
+    };
+
+    // ... confirmMoveToDemo ...
+
+    const confirmMoveToDemo = () => {
+        if (!selectedLead) return;
+        // Proceed even if no trainer selected (optional)
+        handleUpdateStatus(selectedLead.id, 'Demo', { assigned_trainer_id: selectedTrainerId });
+    };
+
+    const handleConvertToMember = () => {
+        setDetailsPanelVisible(false);
+        navigation.navigate('AdminUserOnboarding', {
+            prefill: {
+                name: selectedLead.name,
+                phone: selectedLead.phone,
+                email: selectedLead.email,
+                role: 'Member'
+            },
+            leadId: selectedLead.id // To potentially close/convert lead after user creation
+        });
+    };
+
+    // Calculate funnel counts dynamically
     const getStageCount = (status) => leads.filter(l => l.status === status).length;
 
     const funnelStages = [
-        { name: 'New Inquiries', count: getStageCount('New'), conversion: '-', color: '#3182CE' },
-        { name: 'Contacted', count: getStageCount('Contacted'), conversion: '-', color: '#805AD5' },
-        { name: 'Follow-up', count: getStageCount('Follow-up'), conversion: '-', color: '#D69E2E' },
-        { name: 'Trial Booked', count: getStageCount('Trial Booked'), conversion: '-', color: '#38A169' },
-        { name: 'Converted', count: getStageCount('Converted'), conversion: '-', color: '#22543D' },
+        { name: 'New Inquiries', count: getStageCount('New'), color: '#3182CE' },
+        { name: 'Demo Booked', count: getStageCount('Demo'), color: '#805AD5' },
+        { name: 'Converted', count: getStageCount('Converted'), color: '#38A169' },
+        { name: 'Lost', count: getStageCount('Lost'), color: '#E53E3E' },
     ];
 
     const handleLeadClick = (lead) => {
         setSelectedLead(lead);
+        setSelectedTrainerId(lead.assigned_trainer_id || null);
+        setLogs([]);
+        fetchLogs(lead.id);
         setDetailsPanelVisible(true);
     };
 
     const getStatusColor = (status) => {
-        const colors = { 'New': '#3182CE', 'Contacted': '#805AD5', 'Follow-up': '#D69E2E', 'Trial Booked': '#38A169', 'Converted': '#22543D', 'Lost': '#E53E3E' };
+        const colors = { 'New': '#3182CE', 'Demo': '#805AD5', 'Converted': '#38A169', 'Lost': '#E53E3E' };
         return colors[status] || '#718096';
     };
 
@@ -84,6 +183,11 @@ const AdminLeadManagementScreen = ({ navigation }) => {
         return matchesSearch && matchesStatus;
     });
 
+    const getTrainerName = (id) => {
+        const t = trainers.find(tr => tr.id === id);
+        return t ? t.full_name : 'Unassigned';
+    };
+
     return (
         <View style={styles.container}>
             <ScrollView style={styles.mainContent}>
@@ -91,7 +195,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.pageTitle}>Lead Management</Text>
-                        <Text style={styles.pageSubtitle}>Track inquiries, manage follow-ups, and convert leads to members.</Text>
+                        <Text style={styles.pageSubtitle}>Track inquiries, manage demos, and convert leads.</Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                         <TouchableOpacity style={styles.outlineButton} onPress={fetchLeads}>
@@ -112,7 +216,6 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                             <View style={[styles.funnelBlock, { backgroundColor: stage.color }]}>
                                 <Text style={styles.funnelCount}>{stage.count}</Text>
                                 <Text style={styles.funnelName}>{stage.name}</Text>
-                                <Text style={styles.funnelConversion}>{stage.conversion}</Text>
                             </View>
                             {i < funnelStages.length - 1 && <Ionicons name="chevron-forward" size={20} color="#CBD5E0" style={styles.funnelArrow} />}
                         </View>
@@ -125,13 +228,13 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                         <Ionicons name="search" size={18} color="#718096" />
                         <TextInput
                             style={styles.searchInput}
-                            placeholder="Search leads by name or phone…"
+                            placeholder="Search leads..."
                             value={searchQuery}
                             onChangeText={setSearchQuery}
                         />
                     </View>
                     <View style={styles.filterGroup}>
-                        {['All', 'New', 'Contacted', 'Follow-up', 'Converted', 'Lost'].map(status => (
+                        {['All', 'New', 'Demo', 'Converted', 'Lost'].map(status => (
                             <TouchableOpacity
                                 key={status}
                                 style={[styles.filterChip, filterStatus === status && styles.filterChipActive]}
@@ -154,15 +257,11 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Actions</Text>
                     </View>
                     {isLoading ? (
-                        <View style={{ padding: 40, alignItems: 'center' }}>
-                            <ActivityIndicator size="large" color="#3182CE" />
-                            <Text style={{ marginTop: 16, color: '#718096' }}>Loading leads...</Text>
-                        </View>
+                        <ActivityIndicator size="large" color="#3182CE" style={{ padding: 40 }} />
                     ) : filteredLeads.length === 0 ? (
                         <View style={{ padding: 40, alignItems: 'center' }}>
                             <Ionicons name="funnel-outline" size={48} color="#CBD5E0" />
-                            <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>No leads found.</Text>
-                            <Text style={{ color: '#A0AEC0', fontSize: 14 }}>Add a lead to get started.</Text>
+                            <Text style={{ marginTop: 16, color: '#718096' }}>No leads found.</Text>
                         </View>
                     ) : filteredLeads.map(lead => (
                         <TouchableOpacity key={lead.id} style={styles.tableRow} onPress={() => handleLeadClick(lead)}>
@@ -172,8 +271,9 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                 <Text style={{ fontSize: 12, color: '#718096' }}>{lead.email}</Text>
                             </View>
                             <Text style={[styles.tableCell, { flex: 1 }]}>{lead.source}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.5, color: '#718096' }]}>Unassigned</Text>
-                            {/* Trainer column: Hardcoded for now as DB doesn't have trainer_id yet */}
+                            <Text style={[styles.tableCell, { flex: 1.5, color: '#718096', fontStyle: lead.assigned_trainer_name ? 'normal' : 'italic' }]}>
+                                {lead.assigned_trainer_name || 'Unassigned'}
+                            </Text>
 
                             <View style={[styles.tableCell, { flex: 1 }]}>
                                 <View style={[styles.statusChip, { backgroundColor: getStatusColor(lead.status) + '20' }]}>
@@ -183,62 +283,13 @@ const AdminLeadManagementScreen = ({ navigation }) => {
 
                             <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', gap: 8 }]}>
                                 <TouchableOpacity onPress={() => handleLeadClick(lead)}>
-                                    <Ionicons name="eye-outline" size={18} color="#3182CE" />
-                                </TouchableOpacity>
-                                <TouchableOpacity>
-                                    <Ionicons name="create-outline" size={18} color="#718096" />
+                                    <Ionicons name="create-outline" size={20} color="#718096" />
                                 </TouchableOpacity>
                             </View>
                         </TouchableOpacity>
                     ))}
                 </View>
 
-                {/* Analytics - Partially Dynamic */}
-                <View style={styles.analyticsGrid}>
-                    <View style={styles.analyticsCard}>
-                        <Text style={styles.analyticsTitle}>Leads by Source</Text>
-                        <View style={styles.analyticsContent}>
-                            {['Website', 'Instagram', 'Walk-in', 'Referral'].map(source => {
-                                const count = leads.filter(l => l.source === source).length;
-                                return (
-                                    <View key={source} style={styles.analyticsRow}>
-                                        <Text style={styles.analyticsLabel}>{source}</Text>
-                                        <View style={styles.analyticsBarContainer}>
-                                            <View style={[styles.analyticsBar, { width: `${(count / (leads.length || 1)) * 100}%` }]} />
-                                        </View>
-                                        <Text style={styles.analyticsValue}>{count}</Text>
-                                    </View>
-                                );
-                            })}
-                        </View>
-                    </View>
-                    <View style={styles.analyticsCard}>
-                        <Text style={styles.analyticsTitle}>Automations</Text>
-                        <View style={styles.automationsList}>
-                            <View style={styles.automationRow}>
-                                <Text style={styles.automationLabel}>Auto-send welcome message</Text>
-                                <Switch value={automations.welcome} onValueChange={v => setAutomations({ ...automations, welcome: v })} />
-                            </View>
-                            {/* Other automations can remain mock/local for now as they are features not data */}
-                            <View style={styles.automationRow}>
-                                <Text style={styles.automationLabel}>Auto-assign trainer</Text>
-                                <Switch value={automations.autoAssign} onValueChange={v => setAutomations({ ...automations, autoAssign: v })} />
-                            </View>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Export Tools - Visual Only */}
-                <View style={styles.toolsRow}>
-                    <TouchableOpacity style={styles.toolButton}>
-                        <Ionicons name="download-outline" size={18} color="#4A5568" />
-                        <Text style={styles.toolButtonText}>Export CSV</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.toolButton}>
-                        <Ionicons name="refresh-outline" size={18} color="#4A5568" />
-                        <Text style={styles.toolButtonText}>Refresh</Text>
-                    </TouchableOpacity>
-                </View>
             </ScrollView>
 
             {/* Details Side Panel */}
@@ -261,18 +312,44 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                         <Text style={styles.panelValue}>{selectedLead.name}</Text>
                                         <Text style={styles.panelLabel}>Phone</Text>
                                         <Text style={styles.panelValue}>{selectedLead.phone}</Text>
-                                        <Text style={styles.panelLabel}>Email</Text>
-                                        <Text style={styles.panelValue}>{selectedLead.email}</Text>
-                                        <Text style={styles.panelLabel}>Source</Text>
-                                        <Text style={styles.panelValue}>{selectedLead.source}</Text>
-                                        <Text style={styles.panelLabel}>Notes</Text>
-                                        <Text style={styles.panelValue}>{selectedLead.notes || 'No notes'}</Text>
+                                        <Text style={styles.panelLabel}>Status</Text>
+                                        <Text style={{ ...styles.panelValue, color: getStatusColor(selectedLead.status), fontWeight: 'bold' }}>{selectedLead.status}</Text>
+                                        <Text style={styles.panelLabel}>Assigned Trainer</Text>
+                                        <Text style={styles.panelValue}>{getTrainerName(selectedLead.assigned_trainer_id)}</Text>
+                                        <Text style={styles.panelLabel}>Address</Text>
+                                        <Text style={styles.panelValue}>{selectedLead.address || '-'}</Text>
+
+                                        {selectedLead.lost_reason && (
+                                            <>
+                                                <Text style={styles.panelLabel}>Lost Reason</Text>
+                                                <Text style={[styles.panelValue, { color: '#E53E3E' }]}>{selectedLead.lost_reason}</Text>
+                                            </>
+                                        )}
                                     </View>
 
                                     <View style={styles.panelSection}>
-                                        <Text style={styles.panelSectionTitle}>Activity Timeline</Text>
-                                        <View style={styles.timelineItem}>
-                                            <View style={styles.timelineDot} />
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                            <Text style={styles.panelSectionTitle}>Interaction History</Text>
+                                            <TouchableOpacity onPress={() => setLogModalVisible(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                <Ionicons name="add-circle-outline" size={20} color="#3182CE" />
+                                                <Text style={{ color: '#3182CE', fontWeight: '600' }}>Add Log</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        {logs.length === 0 && <Text style={{ color: '#A0AEC0', fontStyle: 'italic' }}>No interactions logged.</Text>}
+
+                                        {logs.map(log => (
+                                            <View key={log.id} style={styles.timelineItem}>
+                                                <View style={styles.timelineDot} />
+                                                <View style={styles.timelineContent}>
+                                                    <Text style={styles.timelineText}>{log.note}</Text>
+                                                    <Text style={styles.timelineTime}>{new Date(log.created_at).toLocaleString()}</Text>
+                                                </View>
+                                            </View>
+                                        ))}
+
+                                        <View style={[styles.timelineItem, { opacity: 0.7 }]}>
+                                            <View style={[styles.timelineDot, { backgroundColor: '#CBD5E0' }]} />
                                             <View style={styles.timelineContent}>
                                                 <Text style={styles.timelineText}>Lead Created</Text>
                                                 <Text style={styles.timelineTime}>{new Date(selectedLead.created_at).toLocaleDateString()}</Text>
@@ -281,16 +358,112 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                     </View>
 
                                     <View style={styles.panelActions}>
-                                        <TouchableOpacity style={styles.panelButton}>
+                                        <TouchableOpacity
+                                            style={[styles.panelButton, { backgroundColor: '#805AD5' }]}
+                                            onPress={handleMoveToDemo}
+                                        >
+                                            <Text style={styles.panelButtonText}>Move to Demo / Assign Trainer</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={[styles.panelButton, { backgroundColor: '#38A169' }]}
+                                            onPress={handleConvertToMember}
+                                        >
                                             <Text style={styles.panelButtonText}>Convert to Member</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.panelButton, styles.panelButtonOutline]}>
-                                            <Text style={styles.panelButtonTextOutline}>Mark as Lost</Text>
+
+                                        <TouchableOpacity
+                                            style={[styles.panelButton, styles.panelButtonOutline, { borderColor: '#E53E3E' }]}
+                                            onPress={() => setLostModalVisible(true)}
+                                        >
+                                            <Text style={[styles.panelButtonTextOutline, { color: '#E53E3E' }]}>Mark as Lost</Text>
                                         </TouchableOpacity>
                                     </View>
                                 </>
                             )}
                         </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Log Interaction Modal */}
+            <Modal visible={logModalVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={{ width: 400, backgroundColor: '#FFF', borderRadius: 12, padding: 24 }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16 }}>Log Interaction/Call</Text>
+                        <Text style={styles.label}>Notes</Text>
+                        <TextInput
+                            style={[styles.input, styles.textArea]}
+                            multiline numberOfLines={4}
+                            value={logNote}
+                            onChangeText={setLogNote}
+                            placeholder="Details of conversation..."
+                        />
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={() => setLogModalVisible(false)}>
+                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.saveButton} onPress={handleAddLog}>
+                                <Text style={styles.saveButtonText}>Save Log</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Lost Reason Modal */}
+            <Modal visible={lostModalVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={{ width: 400, backgroundColor: '#FFF', borderRadius: 12, padding: 24 }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16 }}>Mark as Lost</Text>
+                        <Text style={styles.label}>Reason for Loss</Text>
+                        <TextInput
+                            style={[styles.input, styles.textArea]}
+                            multiline numberOfLines={3}
+                            value={lostReason}
+                            onChangeText={setLostReason}
+                            placeholder="Why was the lead lost?"
+                        />
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={() => setLostModalVisible(false)}>
+                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#E53E3E' }]} onPress={handleConfirmLost}>
+                                <Text style={styles.saveButtonText}>Confirm Lost</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Move to Demo / Assign Trainer Modal */}
+            <Modal visible={demoModalVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={{ width: 400, backgroundColor: '#FFF', borderRadius: 12, padding: 24 }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16 }}>Move to Demo</Text>
+                        <Text style={{ marginBottom: 16, color: '#718096' }}>Optionally assign a trainer for the demo session.</Text>
+
+                        <Text style={styles.label}>Select Trainer</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+                            {trainers.map(t => (
+                                <TouchableOpacity
+                                    key={t.id}
+                                    style={[styles.sourceOption, selectedTrainerId === t.id && styles.sourceOptionActive]}
+                                    onPress={() => setSelectedTrainerId(t.id)}
+                                >
+                                    <Text style={[styles.sourceText, selectedTrainerId === t.id && styles.sourceTextActive]}>{t.full_name}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                            <TouchableOpacity onPress={() => setDemoModalVisible(false)} style={styles.cancelButton}>
+                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={confirmMoveToDemo} style={[styles.saveButton, { backgroundColor: '#805AD5' }]}>
+                                <Text style={styles.saveButtonText}>Confirm Demo</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </Modal>
@@ -311,6 +484,10 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                         <TextInput style={styles.input} value={newLead.phone} onChangeText={t => setNewLead({ ...newLead, phone: t })} />
                         <Text style={styles.label}>Email</Text>
                         <TextInput style={styles.input} value={newLead.email} onChangeText={t => setNewLead({ ...newLead, email: t })} />
+
+                        <Text style={styles.label}>Address</Text>
+                        <TextInput style={styles.input} value={newLead.address} onChangeText={t => setNewLead({ ...newLead, address: t })} placeholder="Enter address" />
+
                         <Text style={styles.label}>Lead Source</Text>
                         <View style={styles.sourceSelector}>
                             {['Website', 'Instagram', 'Walk-in', 'Referral', 'Campaign'].map(source => (
@@ -323,6 +500,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
                                 </TouchableOpacity>
                             ))}
                         </View>
+
                         <Text style={styles.label}>Notes</Text>
                         <TextInput style={[styles.input, styles.textArea]} multiline numberOfLines={4} value={newLead.notes} onChangeText={t => setNewLead({ ...newLead, notes: t })} />
                         <View style={styles.modalActions}>

@@ -10,11 +10,9 @@ const AdminBillingScreen = ({ navigation }) => {
     // State
     const [plans, setPlans] = useState([]);
     const [subscriptions, setSubscriptions] = useState([]);
-    const [invoices, setInvoices] = useState([]);
 
     const [modalVisible, setModalVisible] = useState(false);
     const [currentPlan, setCurrentPlan] = useState(null);
-    const [gatewayConnected, setGatewayConnected] = useState(true); // Mock status for now
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState('All');
 
@@ -32,7 +30,6 @@ const AdminBillingScreen = ({ navigation }) => {
                 adminApi.getPlans(),
                 adminApi.getBillingOverview()
             ]);
-
             // Map backend plan fields to frontend if necessary
             // Backend: is_active, features, interval
             // Frontend: active, benefits, cycle
@@ -40,14 +37,14 @@ const AdminBillingScreen = ({ navigation }) => {
                 ...p,
                 active: p.is_active,
                 benefits: p.features || [],
-                cycle: p.interval
+                cycle: p.interval,
+                type: p.type || 'Membership'
             }));
 
             setPlans(formattedPlans);
 
             if (billingData) {
                 setSubscriptions(billingData.subscriptions || []);
-                setInvoices(billingData.invoices || []);
             }
         } catch (error) {
             console.error("Failed to fetch billing data:", error);
@@ -58,9 +55,9 @@ const AdminBillingScreen = ({ navigation }) => {
     };
 
     // Stats
-    const totalRevenue = invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+    const totalRevenue = subscriptions.reduce((sum, sub) => sum + (Number(sub.amount) || 0), 0);
     // Format roughly for display, e.g. 4.2L
-    const monthlyRevenue = `₹ ${(totalRevenue / 100000).toFixed(2)}L`;
+    const monthlyRevenue = `₹ ${totalRevenue.toLocaleString()}`;
 
     const activeSubscribers = subscriptions.filter(s => s.status === 'Active').length;
     const failedPayments = subscriptions.filter(s => s.status === 'Past Due').length;
@@ -68,7 +65,7 @@ const AdminBillingScreen = ({ navigation }) => {
 
     // Handlers
     const handleAddPlan = () => {
-        setCurrentPlan({ name: '', price: '', cycle: 'Monthly', active: true, description: '', benefits: [] });
+        setCurrentPlan({ name: '', price: '', cycle: 'Monthly', active: true, description: '', benefits: [], type: 'Membership' });
         setModalVisible(true);
     };
 
@@ -111,11 +108,15 @@ const AdminBillingScreen = ({ navigation }) => {
         setIsSaving(true);
         try {
             // Map frontend back to backend
+            // Remove frontend-only keys (active, benefits, cycle) to avoid schema errors
+            const { active, benefits, cycle, ...rest } = currentPlan;
+
             const planPayload = {
-                ...currentPlan,
-                is_active: currentPlan.active,
-                features: currentPlan.benefits,
-                interval: currentPlan.cycle
+                ...rest,
+                is_active: active,
+                features: benefits,
+                interval: cycle,
+                type: rest.type
             };
 
             if (currentPlan.id) {
@@ -125,7 +126,8 @@ const AdminBillingScreen = ({ navigation }) => {
                     ...updated,
                     active: updated.is_active,
                     benefits: updated.features || [],
-                    cycle: updated.interval
+                    cycle: updated.interval,
+                    type: updated.type
                 };
                 setPlans(plans.map(p => p.id === currentPlan.id ? formatted : p));
             } else {
@@ -134,7 +136,8 @@ const AdminBillingScreen = ({ navigation }) => {
                     ...created,
                     active: created.is_active,
                     benefits: created.features || [],
-                    cycle: created.interval
+                    cycle: created.interval,
+                    type: created.type
                 };
                 setPlans([...plans, formatted]);
             }
@@ -191,31 +194,6 @@ const AdminBillingScreen = ({ navigation }) => {
                         </View>
                     </View>
 
-                    {/* Payment Gateway Card */}
-                    <View style={styles.card}>
-                        <View style={styles.cardHeaderRow}>
-                            <Text style={styles.cardTitle}>Payment Gateway</Text>
-                            <View style={[styles.statusBadge, gatewayConnected ? styles.statusActive : styles.statusInactive]}>
-                                <Text style={[styles.statusText, gatewayConnected ? styles.textActive : styles.textInactive]}>
-                                    {gatewayConnected ? 'Connected' : 'Not Connected'}
-                                </Text>
-                            </View>
-                        </View>
-                        <View style={styles.gatewayContent}>
-                            <View style={styles.gatewayIcons}>
-                                <Ionicons name="logo-usd" size={24} color="#6772E5" style={styles.gatewayIcon} />
-                                <Ionicons name="card" size={24} color="#0070BA" style={styles.gatewayIcon} />
-                            </View>
-                            <Text style={styles.gatewayDesc}>
-                                {gatewayConnected
-                                    ? 'Your Stripe account is connected. Subscriptions are automatically synced.'
-                                    : 'Connect a payment provider to accept payments and manage subscriptions.'}
-                            </Text>
-                            <TouchableOpacity style={styles.outlineButton}>
-                                <Text style={styles.outlineButtonText}>{gatewayConnected ? 'Manage Integration' : 'Connect Payment Gateway'}</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
 
                     {/* Billing Reports */}
                     <View style={styles.statsGrid}>
@@ -252,7 +230,10 @@ const AdminBillingScreen = ({ navigation }) => {
                             ) : plans.map(plan => (
                                 <View key={plan.id} style={styles.planCard}>
                                     <View style={styles.planHeader}>
-                                        <Text style={styles.planName}>{plan.name}</Text>
+                                        <View>
+                                            <Text style={styles.planName}>{plan.name}</Text>
+                                            <Text style={[styles.planCycle, { fontSize: 12, marginTop: 2, color: '#553C9A' }]}>{plan.type}</Text>
+                                        </View>
                                         <Switch
                                             value={plan.active}
                                             onValueChange={() => togglePlanStatus(plan.id)}
@@ -308,6 +289,7 @@ const AdminBillingScreen = ({ navigation }) => {
                             <View style={styles.tableRowHeader}>
                                 <Text style={[styles.tableCell, { flex: 2 }]}>Member Name</Text>
                                 <Text style={[styles.tableCell, { flex: 2 }]}>Plan</Text>
+                                <Text style={[styles.tableCell, { flex: 0.8 }]}>PT</Text>
                                 <Text style={[styles.tableCell, { flex: 1 }]}>Status</Text>
                                 <Text style={[styles.tableCell, { flex: 1.5 }]}>Next Billing</Text>
                                 <Text style={[styles.tableCell, { flex: 1 }]}>Amount</Text>
@@ -323,6 +305,7 @@ const AdminBillingScreen = ({ navigation }) => {
                             <View key={sub.id} style={styles.tableRow}>
                                 <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{sub.member}</Text>
                                 <Text style={[styles.tableCell, { flex: 2 }]}>{sub.plan}</Text>
+                                <Text style={[styles.tableCell, { flex: 0.8 }]}>{sub.pt || 'No'}</Text>
                                 <View style={[styles.tableCell, { flex: 1 }]}>
                                     <View style={[styles.statusBadge,
                                     sub.status === 'Active' ? styles.statusActive :
@@ -346,43 +329,6 @@ const AdminBillingScreen = ({ navigation }) => {
                     </View>
 
 
-                    {/* Invoice List (Visual placeholder as backend needs more data to really populate this fully) */}
-                    <View style={styles.tableCard}>
-                        <Text style={styles.cardTitle}>Recent Invoices</Text>
-                        <View style={styles.tableContainer}>
-                            <View style={styles.tableRowHeader}>
-                                <Text style={[styles.tableCell, { flex: 1.5 }]}>Invoice ID</Text>
-                                <Text style={[styles.tableCell, { flex: 2 }]}>Member</Text>
-                                <Text style={[styles.tableCell, { flex: 2 }]}>Plan</Text>
-                                <Text style={[styles.tableCell, { flex: 1 }]}>Amount</Text>
-                                <Text style={[styles.tableCell, { flex: 1 }]}>Status</Text>
-                                <Text style={[styles.tableCell, { flex: 1.5 }]}>Date</Text>
-                                <Text style={[styles.tableCell, { width: 60 }]}>PDF</Text>
-                            </View>
-                            {invoices.length === 0 ? (
-                                <View style={{ padding: 40, alignItems: 'center' }}>
-                                    <Text style={{ color: '#A0AEC0' }}>No recent invoices.</Text>
-                                </View>
-                            ) : invoices.map(inv => (
-                                <View key={inv.id} style={styles.tableRow}>
-                                    <Text style={[styles.tableCell, { flex: 1.5, color: '#553C9A' }]}>{inv.id}</Text>
-                                    <Text style={[styles.tableCell, { flex: 2 }]}>{inv.member}</Text>
-                                    <Text style={[styles.tableCell, { flex: 2 }]}>{inv.plan}</Text>
-                                    <Text style={[styles.tableCell, { flex: 1 }]}>₹ {inv.amount}</Text>
-                                    <View style={[styles.tableCell, { flex: 1 }]}>
-                                        <Text style={[styles.statusTextSimple,
-                                        inv.status === 'Paid' ? { color: '#38A169' } :
-                                            inv.status === 'Unpaid' ? { color: '#D69E2E' } : { color: '#718096' }
-                                        ]}>{inv.status}</Text>
-                                    </View>
-                                    <Text style={[styles.tableCell, { flex: 1.5 }]}>{inv.date}</Text>
-                                    <TouchableOpacity style={[styles.tableCell, { width: 60 }]}>
-                                        <Ionicons name="download-outline" size={18} color="#4A5568" />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </View>
-                    </View>
                 </ScrollView>
             </View >
 
@@ -391,6 +337,28 @@ const AdminBillingScreen = ({ navigation }) => {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>{currentPlan?.id ? 'Edit Plan' : 'Create New Plan'}</Text>
+
+                        <Text style={styles.label}>Plan Type</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                            {['Membership', 'Personal Training'].map(t => (
+                                <TouchableOpacity
+                                    key={t}
+                                    onPress={() => setCurrentPlan({ ...currentPlan, type: t })}
+                                    style={{
+                                        paddingVertical: 8,
+                                        paddingHorizontal: 16,
+                                        borderRadius: 20,
+                                        backgroundColor: currentPlan?.type === t ? '#553C9A' : '#EDF2F7'
+                                    }}
+                                >
+                                    <Text style={{
+                                        color: currentPlan?.type === t ? '#FFF' : '#718096',
+                                        fontWeight: '600',
+                                        fontSize: 14
+                                    }}>{t}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
 
                         <Text style={styles.label}>Plan Name</Text>
                         <TextInput style={styles.input} value={currentPlan?.name} onChangeText={t => setCurrentPlan({ ...currentPlan, name: t })} />
@@ -403,7 +371,7 @@ const AdminBillingScreen = ({ navigation }) => {
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.label}>Billing Cycle</Text>
                                 <View style={styles.cycleSelector}>
-                                    {['Monthly', 'Quarterly', 'Yearly'].map(c => (
+                                    {['Monthly', 'Quarterly', 'Half Yearly', 'Yearly'].map(c => (
                                         <TouchableOpacity key={c} onPress={() => setCurrentPlan({ ...currentPlan, cycle: c })} style={[styles.cycleOption, currentPlan?.cycle === c && styles.cycleOptionActive]}>
                                             <Text style={[styles.cycleText, currentPlan?.cycle === c && styles.cycleTextActive]}>{c}</Text>
                                         </TouchableOpacity>

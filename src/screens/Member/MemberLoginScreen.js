@@ -1,15 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
-import { getAuth, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
-import { firebaseConfig } from '../../config/firebase';
 
 const MemberLoginScreen = ({ navigation }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [verificationId, setVerificationId] = useState(null);
+  const [otpSent, setOtpSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
-  const recaptchaVerifier = useRef(null);
 
   const handleSendOtp = async () => {
     if (phoneNumber.trim() === '') {
@@ -18,13 +15,13 @@ const MemberLoginScreen = ({ navigation }) => {
     }
 
     try {
-      const auth = getAuth();
-      const phoneProvider = new PhoneAuthProvider(auth);
-      const verificationId = await phoneProvider.verifyPhoneNumber(
-        phoneNumber,
-        recaptchaVerifier.current
-      );
-      setVerificationId(verificationId);
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: phoneNumber,
+      });
+
+      if (error) throw error;
+
+      setOtpSent(true);
       Alert.alert('Success', 'OTP sent!');
     } catch (err) {
       console.error("Phone Auth Error:", err);
@@ -39,71 +36,52 @@ const MemberLoginScreen = ({ navigation }) => {
     }
 
     try {
-      const credential = PhoneAuthProvider.credential(
-        verificationId,
-        verificationCode
-      );
-      const auth = getAuth();
-      const userCredential = await signInWithCredential(auth, credential);
-      console.log("Phone Auth Success:", userCredential.user.uid);
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: phoneNumber,
+        token: verificationCode,
+        type: 'sms'
+      });
 
-      // Proceed to backend verification
-      handleBackendVerify(userCredential.user);
+      if (error) throw error;
 
+      // Check Profile Completion
+      try {
+        const profile = await api.getProfile();
+        console.log("Login Profile Check (Member):", profile);
+
+        if (profile && profile.name && profile.goal) {
+          navigation.replace('MainApp');
+        } else {
+          navigation.navigate('OnboardingSurvey');
+        }
+      } catch (e) {
+        console.log("Profile incomplete, to onboarding");
+        navigation.navigate('OnboardingSurvey');
+      }
     } catch (err) {
       console.error("Verification Error:", err);
       Alert.alert('Error', `Invalid OTP: ${err.message}`);
     }
   };
 
-  const handleBackendVerify = (user) => {
-    if (user) {
-      user.getIdToken().then(token => {
-        api.authVerify(token).then(async () => {
-          try {
-            // Check Profile Completion
-            const profile = await api.getProfile();
-            console.log("Login Profile Check (Member):", profile);
 
-            if (profile && profile.name && profile.goal) {
-              navigation.replace('MainApp'); // Use replace
-            } else {
-              navigation.navigate('OnboardingSurvey');
-            }
-          } catch (e) {
-            console.log("Profile incomplete, to onboarding");
-            navigation.navigate('OnboardingSurvey');
-          }
-        }).catch(err => {
-          console.error("Backend Verification Failed:", err);
-          Alert.alert("Login Error", "Could not verify user with backend.");
-        });
-      });
-    }
-  };
 
   // Dev Helper
   const handleGuestLogin = () => {
-    const { signInAnonymously, getAuth, signOut } = require('firebase/auth');
-    const auth = getAuth();
-    signOut(auth).then(() => {
-      signInAnonymously(auth)
-        .then((cred) => handleBackendVerify(cred.user))
-        .catch(e => Alert.alert("Auth Failed", e.message));
-    });
+    const { signInAnonymously } = require('firebase/auth');
+    supabase.auth.signInAnonymously()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        navigation.navigate('OnboardingSurvey');
+      })
+      .catch(e => Alert.alert("Auth Failed", e.message));
   };
 
   return (
     <View style={styles.container}>
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={firebaseConfig}
-      // attemptInvisibleVerification={true} // Optional: try to verify without showing modal
-      />
-
       <Text style={styles.text}>Member Login</Text>
 
-      {!verificationId ? (
+      {!otpSent ? (
         <>
           <TextInput
             style={styles.input}

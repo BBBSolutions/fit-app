@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { AppState } from 'react-native';
-import { supabase } from '../services/supabaseClient';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { supabase as supabaseClient } from '../services/supabaseClient';
+import { supabase } from '../config/supabaseAuth';
 import { api } from '../services/api';
 
 const ChatContext = createContext();
@@ -12,11 +12,11 @@ export const ChatProvider = ({ children }) => {
 
     const fetchUnreadCount = async () => {
         try {
-            const auth = getAuth();
-            const user = auth.currentUser;
+            // Check Supabase session
+            const { data: { session } } = await supabase.auth.getSession();
 
-            // If no Firebase user, reset and return
-            if (!user) {
+            // If no session, reset and return
+            if (!session) {
                 setUnreadCount(0);
                 setCurrentUserId(null);
                 return;
@@ -47,16 +47,16 @@ export const ChatProvider = ({ children }) => {
     };
 
     useEffect(() => {
-        const auth = getAuth();
-        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            console.log("ChatContext: Auth State Changed:", user ? "Logged In" : "Logged Out");
+        // Listen to Supabase auth state changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log("ChatContext: Auth State Changed:", session ? "Logged In" : "Logged Out");
             fetchUnreadCount();
         });
 
         fetchUnreadCount();
 
         // Refresh on App foreground
-        const subscription = AppState.addEventListener('change', nextAppState => {
+        const appStateSubscription = AppState.addEventListener('change', nextAppState => {
             if (nextAppState === 'active') {
                 fetchUnreadCount();
             }
@@ -82,9 +82,9 @@ export const ChatProvider = ({ children }) => {
             .subscribe();
 
         return () => {
-            subscription.remove();
-            supabase.removeChannel(channel);
-            if (unsubscribeAuth) unsubscribeAuth();
+            appStateSubscription.remove();
+            supabaseClient.removeChannel(channel);
+            if (subscription) subscription.unsubscribe();
         };
     }, [currentUserId]);
 

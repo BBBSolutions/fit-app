@@ -8,44 +8,30 @@ serve(async (req) => {
     }
 
     try {
-        const { token, action, payload } = await req.json();
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) throw new Error('Missing authorization header');
+        const token = authHeader.replace('Bearer ', '');
 
-        if (!token) throw new Error('Missing token');
-
-        // 1. Verify Auth & Get Gym Code
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        const firebaseKey = Deno.env.get('FIREBASE_API_KEY') ?? '';
         const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        const authResponse = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await authResponse.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
-
-        // 2. Resolve Internal User ID
-        const { data: userData, error: userError } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-
-        if (userError || !userData) throw new Error("User map not found");
-        const internalUserId = userData.id;
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+        if (authError || !user) throw new Error("Unauthorized");
+        const userId = user.id;
 
         const { data: adminProfile, error: profileError } = await supabaseClient
             .from('profiles')
             .select('gym_code, user_id')
-            .eq('user_id', internalUserId)
+            .eq('user_id', userId)
             .single();
 
         if (profileError || !adminProfile?.gym_code) throw new Error("Admin profile or Gym Code not found");
         const gymCode = adminProfile.gym_code;
         const adminUUID = adminProfile.user_id;
+
+        const body = await req.json();
+        const { action, payload } = body;
 
         // 2. Handle Actions
         let result;
