@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal,
 import { Ionicons } from '@expo/vector-icons';
 import { adminApi } from '../../services/adminApi';
 
-const AdminContentManagerScreen = ({ navigation }) => {
+const AdminContentManagerScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     const [activeTab, setActiveTab] = useState('All Content');
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('All');
@@ -23,7 +24,7 @@ const AdminContentManagerScreen = ({ navigation }) => {
     const fetchContent = async () => {
         setIsLoading(true);
         try {
-            const data = await adminApi.getContent();
+            const data = await adminApi.getContent(branchId);
             setContentItems(data || []);
         } catch (error) {
             console.error("Failed to fetch content:", error);
@@ -59,11 +60,11 @@ const AdminContentManagerScreen = ({ navigation }) => {
         try {
             if (currentContent.id) {
                 // Update
-                const updated = await adminApi.updateContent(currentContent);
+                const updated = await adminApi.updateContent(currentContent, branchId);
                 setContentItems(contentItems.map(item => item.id === updated.id ? updated : item));
             } else {
                 // Create
-                const created = await adminApi.createContent(currentContent);
+                const created = await adminApi.createContent(currentContent, branchId);
                 setContentItems([created, ...contentItems]);
             }
             setEditorVisible(false);
@@ -87,7 +88,7 @@ const AdminContentManagerScreen = ({ navigation }) => {
                     onPress: async () => {
                         try {
                             setIsLoading(true);
-                            await adminApi.deleteContent(id);
+                            await adminApi.deleteContent(id, branchId);
                             setContentItems(contentItems.filter(item => item.id !== id));
                         } catch (error) {
                             Alert.alert("Error", "Failed to delete content");

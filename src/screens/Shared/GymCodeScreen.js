@@ -10,9 +10,8 @@ const GymCodeScreen = ({ navigation }) => {
             Alert.alert('Error', 'Please enter a Gym Code');
             return;
         }
-        // In a real app, you might validate the code against a backend here.
-        // For now, we just navigate to Login.
-        navigation.navigate('Login');
+        // Navigate to Login passing the gymCode
+        navigation.navigate('Login', { gymCode: gymCode.toUpperCase() });
     };
 
     const handleSuperAdminAccess = () => {

@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
 import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
+import { adminApi } from '../../services/adminApi';
 
-const MemberLoginScreen = ({ navigation }) => {
+const MemberLoginScreen = ({ navigation, route }) => {
+  const { gymCode } = route.params || {};
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
@@ -36,6 +38,13 @@ const MemberLoginScreen = ({ navigation }) => {
     }
 
     try {
+      // dev hack
+      // import adminApi
+      // We need to import adminApi at top level, let's fix imports first
+
+      // ... (rest of logic)
+      // Actually, I should update the imports first.
+
       const { data, error } = await supabase.auth.verifyOtp({
         phone: phoneNumber,
         token: verificationCode,
@@ -43,6 +52,20 @@ const MemberLoginScreen = ({ navigation }) => {
       });
 
       if (error) throw error;
+
+      // START: Join Gym Logic
+      if (gymCode) {
+        try {
+          await adminApi.joinBranch(gymCode, 'member');
+          Alert.alert('Success', `You have successfully joined the gym (${gymCode})!`);
+        } catch (joinErr) {
+          console.error("Join Gym Error:", joinErr);
+          // Don't block login if join fails, but maybe alert user?
+          // "Failed to join gym. You can try again from Dashboard."
+          Alert.alert('Notice', 'Login successful, but failed to join gym automatically. Please contact reception.');
+        }
+      }
+      // END: Join Gym Logic
 
       // Check Profile Completion
       try {

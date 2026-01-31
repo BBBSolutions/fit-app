@@ -1,33 +1,83 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, useWindowDimensions, Switch, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { adminApi } from '../../services/adminApi';
 
 
 const isWeb = Platform.OS === 'web';
 
-const AdminSettingsScreen = ({ navigation }) => {
+const AdminSettingsScreen = ({ navigation, route }) => {
+    const { branchId, gymCode } = route.params || {}; // Get branchId from navigation params
     const [activeSection, setActiveSection] = useState('General');
+    const [isLoading, setIsLoading] = useState(false);
 
     // Mock Data & State
-    const [general, setGeneral] = useState({ name: 'FitPlatform Gym', code: 'GYM001', email: 'admin@fitplatform.com', phone: '+1 555 0199', timezone: 'UTC-5', address: '123 Fitness Blvd', city: 'New York', state: 'NY', zip: '10001' });
-    const [branding, setBranding] = useState({ primary: '#3182CE', secondary: '#2D3748' });
+    const [general, setGeneral] = useState({ name: '', code: '', email: '', phone: '', timezone: '', address: '', city: '', state: '', zip: '' });
     const [roles, setRoles] = useState({ defaultRole: 'Member', autoAssign: true });
     const [billing, setBilling] = useState({ currency: 'USD', autoCancel: false, emailReminders: true, tax: '8.875' });
-    const [notifications, setNotifications] = useState({ emailSignup: true, emailPayment: true, pushInactive: false, systemAlerts: true });
-    const [security, setSecurity] = useState({ twoFactor: false, allowNewDevices: true });
 
-    const integrations = [
-        { name: 'Stripe', icon: 'card', status: 'Connected', color: '#6772E5' },
-        { name: 'Twilio', icon: 'chatbubbles', status: 'Not Connected', color: '#F22F46' },
-        { name: 'Google Analytics', icon: 'analytics', status: 'Connected', color: '#E37400' },
-        { name: 'Firebase', icon: 'logo-firebase', status: 'Connected', color: '#FFCA28' },
-    ];
+    // Fetch Settings
+    React.useEffect(() => {
+        if (activeSection === 'General') {
+            fetchGeneralSettings();
+        }
+    }, [activeSection]);
 
-    const logs = [
-        { time: '2023-11-27 10:30', action: 'User Login', user: 'admin@fit.com', ip: '192.168.1.1', status: 'Success' },
-        { time: '2023-11-27 09:15', action: 'Update Plan', user: 'admin@fit.com', ip: '192.168.1.1', status: 'Success' },
-        { time: '2023-11-26 18:45', action: 'Failed Payment', user: 'System', ip: '-', status: 'Error' },
-    ];
+    const fetchGeneralSettings = async () => {
+        setIsLoading(true);
+        console.log("Fetching settings for branchId:", branchId);
+        try {
+            const response = await adminApi.getBranches();
+            console.log("Fetched branches response:", response);
+            // Handle both { branches: [...] } and direct array [...] formats
+            const branches = response.branches || response;
+
+            if (branches && Array.isArray(branches) && branches.length > 0) {
+                const currentBranch = branches.find(b => b.id === branchId) || branches[0];
+                if (currentBranch) {
+                    setGeneral({
+                        name: currentBranch.name || '',
+                        code: currentBranch.gym_code || '',
+                        email: currentBranch.contact_email || '',
+                        phone: currentBranch.contact_phone || '',
+                        address: currentBranch.address || '',
+                        city: currentBranch.city || '',
+                        state: currentBranch.state || '',
+                        zip: currentBranch.zip_code || '',
+                        timezone: currentBranch.timezone || 'UTC'
+                    });
+                }
+            } else {
+                console.warn("No branches returned from API (Parsed):", branches);
+            }
+        } catch (error) {
+            console.error("Failed to fetch settings:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSaveGeneral = async () => {
+        setIsLoading(true);
+        try {
+            await adminApi.updateBranch(branchId, {
+                name: general.name,
+                contact_email: general.email,
+                contact_phone: general.phone,
+                address: general.address,
+                city: general.city,
+                state: general.state,
+                zip_code: general.zip,
+                timezone: general.timezone
+            });
+            alert('Settings saved successfully');
+        } catch (error) {
+            console.error("Save failed:", error);
+            alert('Failed to save settings');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const renderSectionContent = () => {
         switch (activeSection) {
@@ -58,11 +108,13 @@ const AdminSettingsScreen = ({ navigation }) => {
                             <TextInput style={styles.input} value={general.address} onChangeText={t => setGeneral({ ...general, address: t })} />
                         </View>
                         <View style={styles.row}>
-                            <TextInput style={[styles.input, { flex: 2, marginRight: 16 }]} value={general.city} placeholder="City" />
-                            <TextInput style={[styles.input, { flex: 1, marginRight: 16 }]} value={general.state} placeholder="State" />
-                            <TextInput style={[styles.input, { flex: 1 }]} value={general.zip} placeholder="ZIP" />
+                            <TextInput style={[styles.input, { flex: 2, marginRight: 16 }]} value={general.city} onChangeText={t => setGeneral({ ...general, city: t })} placeholder="City" />
+                            <TextInput style={[styles.input, { flex: 1, marginRight: 16 }]} value={general.state} onChangeText={t => setGeneral({ ...general, state: t })} placeholder="State" />
+                            <TextInput style={[styles.input, { flex: 1 }]} value={general.zip} onChangeText={t => setGeneral({ ...general, zip: t })} placeholder="ZIP" />
                         </View>
-                        <TouchableOpacity style={styles.saveButton}><Text style={styles.saveButtonText}>Save Changes</Text></TouchableOpacity>
+                        <TouchableOpacity style={styles.saveButton} onPress={handleSaveGeneral}>
+                            <Text style={styles.saveButtonText}>{isLoading ? 'Saving...' : 'Save Changes'}</Text>
+                        </TouchableOpacity>
                     </View>
                 );
             case 'Branding':
@@ -224,27 +276,27 @@ const AdminSettingsScreen = ({ navigation }) => {
                     <View style={styles.sidebarHeader}>
                         <Ionicons name="fitness" size={32} color="#3182CE" />
                     </View>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminDashboard')}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode })}>
                         <Ionicons name="grid-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
+                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode })}>
                         <Ionicons name="document-text-outline" size={24} color="#A0AEC0" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
+                    </TouchableOpacity> */}
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode })}>
                         <Ionicons name="funnel-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding')}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode })}>
                         <Ionicons name="people-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBranding')}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode })}>
                         <Ionicons name="color-palette-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBilling')}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode })}>
                         <Ionicons name="card-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
+                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode })}>
                         <Ionicons name="bar-chart-outline" size={24} color="#A0AEC0" />
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                     <TouchableOpacity style={styles.mainSidebarItemActive}>
                         <Ionicons name="settings" size={24} color="#3182CE" />
                     </TouchableOpacity>
@@ -260,7 +312,8 @@ const AdminSettingsScreen = ({ navigation }) => {
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={isMobile ? styles.settingsTabsMobile : null}
                     >
-                        {['General', 'Branding', 'Users & Roles', 'Billing', 'Integrations', 'Notifications', 'Security', 'System Logs'].map(section => (
+                        {/* ['General', 'Branding', 'Users & Roles', 'Billing', 'Integrations', 'Notifications', 'Security', 'System Logs'] */}
+                        {['General', 'Users & Roles'].map(section => (
                             <TouchableOpacity
                                 key={section}
                                 style={[

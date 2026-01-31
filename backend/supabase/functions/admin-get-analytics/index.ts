@@ -20,14 +20,32 @@ serve(async (req) => {
         if (authError || !user) throw new Error("Unauthorized");
         const userId = user.id;
 
-        const { data: adminProfile, error: profileError } = await supabaseClient
-            .from('profiles')
-            .select('gym_code')
-            .eq('user_id', userId)
-            .single();
+        // Parse options from body (if present)
+        let branchId;
+        try {
+            const body = await req.json();
+            branchId = body.branchId;
+        } catch {
+            // Ignore JSON parse error if body is empty
+        }
 
-        if (profileError || !adminProfile?.gym_code) throw new Error("Admin profile or Gym Code not found");
-        const gymCode = adminProfile.gym_code;
+        // Get Admin Profile & Gym Code (New Schema)
+        let query = supabaseClient
+            .from('branch_users')
+            .select('role, branches(gym_code)')
+            .eq('user_id', userId)
+            .in('role', ['owner', 'branch_admin']);
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data: branchUser, error: branchError } = await query.limit(1).single();
+
+        if (branchError || !branchUser?.branches?.gym_code) {
+            throw new Error("Admin profile or Gym Code not found");
+        }
+        const gymCode = branchUser.branches.gym_code;
 
         // 2. Aggregate Data
         // Users Count

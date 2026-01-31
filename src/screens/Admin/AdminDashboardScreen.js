@@ -6,7 +6,8 @@ import { adminApi } from '../../services/adminApi';
 
 const isWeb = Platform.OS === 'web';
 
-const AdminDashboardScreen = ({ navigation }) => {
+const AdminDashboardScreen = ({ navigation, route }) => {
+    const { branchId, gymCode, branchName } = route.params || {};
     const [drawerVisible, setDrawerVisible] = useState(false);
     const { width } = useWindowDimensions();
     const isMobile = width < 768;
@@ -26,7 +27,7 @@ const AdminDashboardScreen = ({ navigation }) => {
     const fetchStats = async () => {
         setLoading(true);
         try {
-            const data = await adminApi.getDashboardStats();
+            const data = await adminApi.getDashboardStats(branchId);
             setStats({
                 ...data,
                 // Ensure arrays are at least empty arrays if undefined
@@ -46,13 +47,12 @@ const AdminDashboardScreen = ({ navigation }) => {
         fetchStats();
     }, []);
 
-    // KPIs with Real Data
     const kpis = [
-        { title: 'Active Members', value: loading ? '...' : stats.activeMembers, change: '+12%', trend: 'up', icon: 'people' },
-        { title: 'Active Trainers', value: loading ? '...' : stats.activeTrainers, change: '+5%', trend: 'up', icon: 'fitness' },
-        { title: 'Revenue (Month)', value: loading ? '...' : `₹ ${stats.monthlyRevenue}`, change: '+8.5%', trend: 'up', icon: 'cash' }, // TODO: Format currency properly
-        { title: 'New Leads', value: loading ? '...' : stats.leads, change: '+15%', trend: 'up', icon: 'trending-up' },
-        { title: 'Open Inquiries', value: '0', change: '0%', trend: 'down', icon: 'chatbubbles' }, // Placeholder
+        { title: 'Active Members', value: loading ? '...' : stats.activeMembers, change: null, trend: null, icon: 'people' },
+        { title: 'Active Trainers', value: loading ? '...' : stats.activeTrainers, change: null, trend: null, icon: 'fitness' },
+        { title: 'Total Revenue', value: loading ? '...' : `₹ ${stats.monthlyRevenue}`, change: null, trend: null, icon: 'cash' },
+        { title: 'New Leads', value: loading ? '...' : stats.leads, change: null, trend: null, icon: 'trending-up' },
+        // { title: 'Open Inquiries', value: '0', change: null, trend: null, icon: 'chatbubbles' }, // Hidden until implemented
     ];
 
     const quickActions = [
@@ -61,7 +61,7 @@ const AdminDashboardScreen = ({ navigation }) => {
         { label: 'Create Plan', icon: 'calendar', route: 'EditWorkoutPlan' },
         { label: 'Invite Link', icon: 'link', route: 'AdminUserOnboarding' },
         { label: 'View Billing', icon: 'card', route: 'AdminBilling' },
-        { label: 'Analytics', icon: 'bar-chart', route: 'AdminAnalytics' },
+        // { label: 'Analytics', icon: 'bar-chart', route: 'AdminAnalytics' },
     ];
 
     // Data is now in 'stats' state
@@ -108,6 +108,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                 onClose={() => setDrawerVisible(false)}
                 navigation={navigation}
                 currentScreen="AdminDashboard"
+                extraParams={{ branchId, gymCode, branchName }}
             />
 
             {/* Sidebar - Desktop Only */}
@@ -121,31 +122,31 @@ const AdminDashboardScreen = ({ navigation }) => {
                         <Ionicons name="grid-outline" size={20} color="#3182CE" />
                         <Text style={styles.sidebarItemTextActive}>Dashboard</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode })}>
                         <Ionicons name="document-text-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Content</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
+                    </TouchableOpacity> */}
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode })}>
                         <Ionicons name="funnel-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Leads</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding')}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode })}>
                         <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Branding</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding')}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode })}>
                         <Ionicons name="people-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Users</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling')}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode })}>
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode })}>
                         <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Analytics</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings')}>
+                    </TouchableOpacity> */}
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode })}>
                         <Ionicons name="settings-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Settings</Text>
                     </TouchableOpacity>
@@ -165,11 +166,18 @@ const AdminDashboardScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         )}
                         <View>
-                            <Text style={styles.pageTitle}>Dashboard Overview</Text>
+                            <Text style={styles.pageTitle}>Dashboard Overview {branchName ? `- ${branchName}` : ''}</Text>
                             <Text style={styles.pageSubtitle}>Manage your gym operations, performance, and activity in one place.</Text>
                         </View>
                     </View>
                     <View style={styles.headerControls}>
+                        <TouchableOpacity
+                            style={[styles.iconButton, { flexDirection: 'row', gap: 8, paddingHorizontal: 12 }]}
+                            onPress={() => navigation.navigate('OwnerBranchList')}
+                        >
+                            <Ionicons name="business-outline" size={20} color="#4A5568" />
+                            <Text style={{ color: '#4A5568', fontWeight: '600', fontSize: 14 }}>Switch Branch</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity style={styles.iconButton} onPress={fetchStats}>
                             <Ionicons name="refresh-outline" size={20} color={loading ? "#A0AEC0" : "#4A5568"} />
                         </TouchableOpacity>
@@ -191,9 +199,11 @@ const AdminDashboardScreen = ({ navigation }) => {
                                     <View style={styles.kpiIcon}>
                                         <Ionicons name={kpi.icon} size={18} color="#3182CE" />
                                     </View>
-                                    <View style={[styles.trendBadge, kpi.trend === 'up' ? styles.trendUp : styles.trendDown]}>
-                                        <Text style={[styles.trendText, kpi.trend === 'up' ? styles.textUp : styles.textDown]}>{kpi.change}</Text>
-                                    </View>
+                                    {kpi.change && (
+                                        <View style={[styles.trendBadge, kpi.trend === 'up' ? styles.trendUp : styles.trendDown]}>
+                                            <Text style={[styles.trendText, kpi.trend === 'up' ? styles.textUp : styles.textDown]}>{kpi.change}</Text>
+                                        </View>
+                                    )}
                                 </View>
                                 <Text style={styles.kpiValue}>{kpi.value}</Text>
                                 <Text style={styles.kpiTitle}>{kpi.title}</Text>
@@ -205,7 +215,8 @@ const AdminDashboardScreen = ({ navigation }) => {
                     <View style={styles.gridContainer}>
                         {/* Left Column (Main Content) */}
                         <View style={styles.leftColumn}>
-                            {/* Activity Snapshot */}
+
+                            {/* Activity Snapshot - Hidden
                             <View style={styles.sectionCard}>
                                 <Text style={styles.cardTitle}>Activity Snapshot</Text>
                                 <View style={styles.chartsRow}>
@@ -219,6 +230,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                                     </View>
                                 </View>
                             </View>
+                            */}
 
                             {/* Quick Actions */}
                             <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -260,7 +272,7 @@ const AdminDashboardScreen = ({ navigation }) => {
 
                         {/* Right Column (Sidebar Widgets) */}
                         <View style={styles.rightColumn}>
-                            {/* Pending Tasks */}
+                            {/* Pending Tasks - Hidden
                             <View style={styles.card}>
                                 <Text style={styles.cardTitle}>Pending Tasks</Text>
                                 {stats.pendingTasks.length === 0 ? (
@@ -279,6 +291,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                                     ))
                                 )}
                             </View>
+                            */}
 
                             {/* Leads Summary */}
                             <View style={styles.card}>
@@ -303,7 +316,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                                 )}
                             </View>
 
-                            {/* Upcoming Events */}
+                            {/* Upcoming Events - Hidden
                             <View style={styles.card}>
                                 <Text style={styles.cardTitle}>Upcoming Events</Text>
                                 {stats.upcomingEvents.length === 0 ? (
@@ -322,6 +335,7 @@ const AdminDashboardScreen = ({ navigation }) => {
                                     ))
                                 )}
                             </View>
+                            */}
                         </View>
                     </View>
                 </ScrollView>

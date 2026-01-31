@@ -46,7 +46,16 @@ export const api = {
             method: 'GET',
             headers
         });
-        if (!response.ok) throw new Error('Failed to fetch profile');
+        if (response.status === 404) {
+            console.warn("getProfile: Profile not found (404). User might need to onboard.");
+            return null;
+        }
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("getProfile Failed. Status:", response.status, "Error:", errText);
+            throw new Error('Failed to fetch profile: ' + errText);
+        }
 
         const data = await response.json();
         const toCamelCase = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());

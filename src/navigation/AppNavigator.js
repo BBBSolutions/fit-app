@@ -40,6 +40,8 @@ const Stack = createNativeStackNavigator();
 
 import WelcomeScreen from '../screens/Shared/WelcomeScreen';
 import GymOwnerSignupScreen from '../screens/Admin/GymOwnerSignupScreen';
+import OwnerBranchListScreen from '../screens/Admin/OwnerBranchListScreen';
+import AdminCreateBranchScreen from '../screens/Admin/AdminCreateBranchScreen';
 
 const AppNavigator = () => {
     return (
@@ -64,6 +66,8 @@ const AppNavigator = () => {
                 <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
                 <Stack.Screen name="WorkoutResults" component={require('../screens/Member/WorkoutResultsScreen').default} />
                 <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
+                <Stack.Screen name="OwnerBranchList" component={OwnerBranchListScreen} />
+                <Stack.Screen name="AdminCreateBranch" component={AdminCreateBranchScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
                 <Stack.Screen name="AdminBranding" component={AdminBrandingScreen} />
                 <Stack.Screen name="AdminUserOnboarding" component={AdminUserOnboardingScreen} />

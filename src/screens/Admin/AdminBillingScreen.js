@@ -6,7 +6,8 @@ import { adminApi } from '../../services/adminApi';
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
-const AdminBillingScreen = ({ navigation }) => {
+const AdminBillingScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     // State
     const [plans, setPlans] = useState([]);
     const [subscriptions, setSubscriptions] = useState([]);
@@ -27,8 +28,8 @@ const AdminBillingScreen = ({ navigation }) => {
         setIsLoading(true);
         try {
             const [plansData, billingData] = await Promise.all([
-                adminApi.getPlans(),
-                adminApi.getBillingOverview()
+                adminApi.getPlans(branchId),
+                adminApi.getBillingOverview(branchId)
             ]);
             // Map backend plan fields to frontend if necessary
             // Backend: is_active, features, interval
@@ -120,7 +121,7 @@ const AdminBillingScreen = ({ navigation }) => {
             };
 
             if (currentPlan.id) {
-                const updated = await adminApi.updatePlan(planPayload);
+                const updated = await adminApi.updatePlan(planPayload, branchId);
                 // Map back to frontend
                 const formatted = {
                     ...updated,
@@ -131,7 +132,7 @@ const AdminBillingScreen = ({ navigation }) => {
                 };
                 setPlans(plans.map(p => p.id === currentPlan.id ? formatted : p));
             } else {
-                const created = await adminApi.createPlan(planPayload);
+                const created = await adminApi.createPlan(planPayload, branchId);
                 const formatted = {
                     ...created,
                     active: created.is_active,
@@ -161,7 +162,7 @@ const AdminBillingScreen = ({ navigation }) => {
             await adminApi.updatePlan({
                 id: plan.id,
                 is_active: !plan.active
-            });
+            }, branchId);
         } catch (error) {
             Alert.alert("Error", "Failed to update plan status");
             setPlans(plans); // Revert

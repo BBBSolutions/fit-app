@@ -3,7 +3,10 @@ import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } fr
 import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
 
-const TrainerLoginScreen = ({ navigation }) => {
+import { adminApi } from '../../services/adminApi';
+
+const TrainerLoginScreen = ({ navigation, route }) => {
+    const { gymCode } = route.params || {};
     const [phoneNumber, setPhoneNumber] = useState('');
     const [otpSent, setOtpSent] = useState(false);
     const [verificationCode, setVerificationCode] = useState('');
@@ -43,6 +46,18 @@ const TrainerLoginScreen = ({ navigation }) => {
             });
 
             if (error) throw error;
+
+            // START: Join Gym Logic
+            if (gymCode) {
+                try {
+                    await adminApi.joinBranch(gymCode, 'trainer');
+                    Alert.alert('Success', `You have successfully joined the gym (${gymCode}) as a Trainer!`);
+                } catch (joinErr) {
+                    console.error("Join Gym Error:", joinErr);
+                    Alert.alert('Notice', 'Login successful, but failed to join gym automatically. Please contact Owner.');
+                }
+            }
+            // END: Join Gym Logic
 
             // Check Profile Completion
             try {

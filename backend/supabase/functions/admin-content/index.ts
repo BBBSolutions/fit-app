@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 serve(async (req) => {
@@ -20,18 +20,27 @@ serve(async (req) => {
         if (authError || !user) throw new Error("Unauthorized");
         const userId = user.id;
 
-        const { data: adminProfile, error: profileError } = await supabaseClient
-            .from('profiles')
-            .select('gym_code, user_id')
-            .eq('user_id', userId)
-            .single();
-
-        if (profileError || !adminProfile?.gym_code) throw new Error("Admin profile or Gym Code not found");
-        const gymCode = adminProfile.gym_code;
-        const adminUUID = adminProfile.user_id;
-
+        // Parse action and payload from body
         const body = await req.json();
-        const { action, payload } = body;
+        const { action, payload, branchId } = body;
+
+        // Get Admin Profile & Gym Code (New Schema)
+        let query = supabaseClient
+            .from('branch_users')
+            .select('role, branches(gym_code)')
+            .eq('user_id', userId)
+            .in('role', ['owner', 'branch_admin']);
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data: branchUser, error: branchError } = await query.limit(1).single();
+
+        if (branchError || !branchUser?.branches?.gym_code) {
+            throw new Error("Admin profile or Gym Code not found");
+        }
+        const gymCode = branchUser.branches.gym_code;
 
         // 2. Handle Actions
         let result;
@@ -53,7 +62,7 @@ serve(async (req) => {
                     .insert({
                         ...payload,
                         gym_code: gymCode,
-                        author_id: adminUUID
+                        author_id: userId
                     })
                     .select()
                     .single());

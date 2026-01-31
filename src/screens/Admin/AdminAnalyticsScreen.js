@@ -6,7 +6,8 @@ import { adminApi } from '../../services/adminApi';
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
-const AdminAnalyticsScreen = ({ navigation }) => {
+const AdminAnalyticsScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     const [dateRange, setDateRange] = useState('30 Days');
     const [chartMetric, setChartMetric] = useState('Revenue');
     const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +35,7 @@ const AdminAnalyticsScreen = ({ navigation }) => {
         try {
             // Map '30 Days' etc to whatever format backend expects if needed.
             // Currently backend treats 'range' loosely or defaults.
-            const data = await adminApi.getAnalytics(dateRange);
+            const data = await adminApi.getAnalytics(dateRange, branchId);
 
             if (data) {
                 if (data.kpis) setKpis(data.kpis);

@@ -2,22 +2,22 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const AdminDrawer = ({ visible, onClose, navigation, currentScreen }) => {
+const AdminDrawer = ({ visible, onClose, navigation, currentScreen, extraParams }) => { // added extraParams
     const menuItems = [
         { name: 'Dashboard', route: 'AdminDashboard', icon: 'grid-outline' },
-        { name: 'Content', route: 'AdminContentManager', icon: 'document-text-outline' },
+        // { name: 'Content', route: 'AdminContentManager', icon: 'document-text-outline' },
         { name: 'Leads', route: 'AdminLeadManagement', icon: 'funnel-outline' },
         { name: 'Branding', route: 'AdminBranding', icon: 'color-palette-outline' },
         { name: 'Users', route: 'AdminUserOnboarding', icon: 'people-outline' },
         { name: 'Billing', route: 'AdminBilling', icon: 'card-outline' },
-        { name: 'Analytics', route: 'AdminAnalytics', icon: 'bar-chart-outline' },
+        // { name: 'Analytics', route: 'AdminAnalytics', icon: 'bar-chart-outline' },
         { name: 'Settings', route: 'AdminSettings', icon: 'settings-outline' },
     ];
 
     const handleNavigate = (route) => {
         onClose();
         if (route !== currentScreen) {
-            navigation.navigate(route);
+            navigation.navigate(route, extraParams); // Pass extraParams (branchId, gymCode)
         }
     };
 

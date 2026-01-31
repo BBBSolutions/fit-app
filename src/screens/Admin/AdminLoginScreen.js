@@ -44,7 +44,7 @@ const AdminLoginScreen = ({ navigation }) => {
             if (error) throw error;
 
             console.log("Admin Login Success");
-            navigation.replace('AdminDashboard');
+            navigation.replace('OwnerBranchList');
         } catch (err) {
             console.error("Verification Error:", err);
             Alert.alert('Error', `Invalid OTP: ${err.message}`);
@@ -58,7 +58,7 @@ const AdminLoginScreen = ({ navigation }) => {
             if (error) throw error;
 
             console.log("Admin Dev Login Success");
-            navigation.replace('AdminDashboard');
+            navigation.replace('OwnerBranchList');
         } catch (err) {
             Alert.alert("Auth Failed", err.message);
         }

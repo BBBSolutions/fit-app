@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 serve(async (req) => {
@@ -30,23 +30,29 @@ serve(async (req) => {
 
         const userId = user.id; // Direct UUID from Supabase Auth
 
-        // 2. Get Admin Profile & Gym Code
-        const { data: adminProfile, error: adminError } = await supabaseClient
-            .from('profiles')
-            .select('gym_code')
-            .eq('user_id', userId)
-            .single();
-
-        if (adminError || !adminProfile?.gym_code) {
-            console.error("Error fetching admin profile or missing gym code:", adminError);
-            throw new Error("Admin profile not found or missing Gym Code");
-        }
-
-        const gymCode = adminProfile.gym_code;
-
         // 3. Parse action and payload from body
         const body = await req.json();
-        const { action, payload } = body;
+        const { action, payload, branchId } = body;
+
+        // 2. Get Admin Profile & Gym Code (New Schema: branch_users -> branches)
+        let query = supabaseClient
+            .from('branch_users')
+            .select('branch_id, role, branches(gym_code)')
+            .eq('user_id', userId)
+            .in('role', ['owner', 'branch_admin']);
+
+        if (branchId) {
+            query = query.eq('branch_id', branchId);
+        }
+
+        const { data: branchUser, error: branchError } = await query.limit(1).single();
+
+        if (branchError || !branchUser?.branches?.gym_code) {
+            console.error("Error fetching admin branch data:", branchError);
+            throw new Error("Admin profile not found, or you are not an admin of the specified gym branch.");
+        }
+
+        const gymCode = branchUser.branches.gym_code;
 
         // 4. Handle Actions
         let result;
@@ -55,10 +61,13 @@ serve(async (req) => {
         switch (action) {
             case 'fetch':
             case undefined: // Default to fetch if no action
-                // 1. Fetch Active Profiles
+                // 1. Fetch Active Profiles (Join with Profiles again to get assigned trainer name if needed, or just IDs)
+                // We need to fetch 'assigned_trainer_id' and ideally the trainer's name. 
+                // Since self-join is complex in one go, let's fetch IDs first or mapping.
+                // Assuming 'assigned_trainer_id' exists in profiles.
                 const { data: activeUsers, error: profilesError } = await supabaseClient
                     .from('profiles')
-                    .select('user_id, full_name, role, phone_number, created_at, gym_code, address, app_users(email)')
+                    .select('user_id, full_name, role, phone_number, created_at, gym_code, address, assigned_trainer_id, app_users(email)')
                     .eq('gym_code', gymCode)
                     .neq('role', 'admin')
                     .order('created_at', { ascending: false });
@@ -68,7 +77,7 @@ serve(async (req) => {
                 // 2. Fetch Pending Invitations
                 const { data: pendingUsers, error: invitesError } = await supabaseClient
                     .from('invitations')
-                    .select('id, name, role, phone, email, plan_id, pt_plan_id, created_at, status, address')
+                    .select('id, name, role, phone, email, plan_id, pt_plan_id, created_at, status, address, assigned_trainer_id')
                     .eq('gym_code', gymCode)
                     .eq('status', 'pending')
                     .order('created_at', { ascending: false });
@@ -105,7 +114,12 @@ serve(async (req) => {
                     gym_code: u.gym_code,
                     plan_id: userPlans[u.user_id]?.plan_id || null,
                     pt_plan_id: userPlans[u.user_id]?.pt_plan_id || null,
-                    address: u.address
+                    address: u.address,
+                    assigned_trainer_id: u.assigned_trainer_id,
+                    // We can map trainer name here efficiently if we had a map of all trainers.
+                    // Let's create a trainer map from activeUsers AND pendingUsers (Invited Trainers)
+                    assigned_trainer_name: activeUsers.find(t => t.user_id === u.assigned_trainer_id)?.full_name
+                        || pendingUsers.find(t => t.id === u.assigned_trainer_id)?.name
                 }));
 
                 const mappedPending = pendingUsers.map(u => ({
@@ -119,7 +133,10 @@ serve(async (req) => {
                     gym_code: gymCode,
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
-                    address: u.address
+                    address: u.address,
+                    assigned_trainer_id: u.assigned_trainer_id,
+                    assigned_trainer_name: activeUsers.find(t => t.user_id === u.assigned_trainer_id)?.full_name
+                        || pendingUsers.find(t => t.id === u.assigned_trainer_id)?.name
                 }));
 
                 // Combine and sort by newest first
@@ -157,7 +174,43 @@ serve(async (req) => {
                     throw new Error("Name and either Phone or Email are required");
                 }
 
+                // Handling Branch Admin Creation specifically to ensure branch_users entry + permissions
+                if (payload.role === 'branch_admin') {
+                    // Check if user exists as strict profile first might be tricky if they are new. 
+                    // Usually we invite them via auth, but here we are creating a profile/invitation.
+                    // If we want them to login, they need an auth user. 
+                    // Simple flow: Create Invitation -> They accept -> Auth User created -> trigger creates profile -> we update role?
+                    // OR: "Create User" here implies creating a "Ghost" user or Pre-created user? 
+                    // Looking at 'bulk_create', it creates INVITATIONS.
+                    // So specific Branch Admin creation should probably also be an Invitation if they don't exist?
+                    // But for Admin, we might want to attach permissions NOW. Invitation table needs 'permissions' col?
+                    // Or just store it in metadata?
+                    // Let's assume we create an INVITATION with role='branch_admin'. 
+                    // When they accept, they become branch_admin. 
+                    // WE NEED TO STORE PERMISSIONS IN INVITATION or somewhere. 
+                    // Let's add 'permissions' to invitation creation for now if standard flow.
+                    // BUT, if we want to assign permissions to EXISTING user, we do it via branch_users.
+
+                    // For now, let's treat "Create" as "Create Invitation" as per existing code.
+                    // I will add 'permissions' to the INSERT.
+                    // IMPORTANT: 'invitations' table does not have 'permissions' column yet.
+                    // I should add it to migration or use a metadata field?
+                    // 'invitations' has 'role'. 
+                    // Let's add 'permissions' to 'invitations' table too in a migration update or separate one?
+                    // Better: use 'create_branch_admin' action if we want to be explicit, but 'create' is generic.
+                    // I'll stick to 'create' and add permissions to payload.
+                    // I need to update INVITATION schema to store permissions? Or just handle it post-signup?
+                    // If they are pending, we can't save to branch_users yet as there is no user_id?
+                    // Wait, `branch_users` links `user_id` (auth id).
+                    // So we need `permissions` in `invitations` table to copy over on signup.
+                    // I will assume for this task we might need to modify `invitations` table too. 
+                    // OR just stick to updating permissions for ACTIVE users.
+                    // Let's try to update `invitations` logic to accept `permissions` JSONB.
+                    // I will need to update the migration to add permissions to invitations too.
+                }
+
                 // Check if already invited
+
                 const { data: existingInvite } = await supabaseClient
                     .from('invitations')
                     .select('id')
@@ -165,24 +218,42 @@ serve(async (req) => {
                     .or(`phone.eq.${payload.phone},email.eq.${payload.email}`)
                     .maybeSingle();
 
-                if (existingInvite) throw new Error("User already invited");
-
-                // Create Invitation
-                ({ data: result, error } = await supabaseClient
-                    .from('invitations')
-                    .insert({
-                        gym_code: gymCode,
-                        role: payload.role?.toLowerCase() || 'member',
-                        name: payload.name,
-                        phone: payload.phone,
-                        email: payload.email,
-                        plan_id: payload.plan_id || null,
-                        pt_plan_id: payload.pt_plan_id || null,
-                        status: 'pending',
-                        address: payload.address
-                    })
-                    .select()
-                    .single());
+                if (existingInvite) {
+                    // Update existing invitation instead of erroring
+                    ({ data: result, error } = await supabaseClient
+                        .from('invitations')
+                        .update({
+                            role: payload.role?.toLowerCase() || 'member',
+                            name: payload.name,
+                            plan_id: payload.plan_id || null,
+                            pt_plan_id: payload.pt_plan_id || null,
+                            address: payload.address,
+                            permissions: payload.permissions || [],
+                            assigned_trainer_id: payload.assigned_trainer_id || null
+                        })
+                        .eq('id', existingInvite.id)
+                        .select()
+                        .maybeSingle());
+                } else {
+                    // Create New Invitation
+                    ({ data: result, error } = await supabaseClient
+                        .from('invitations')
+                        .insert({
+                            gym_code: gymCode,
+                            role: payload.role?.toLowerCase() || 'member',
+                            name: payload.name,
+                            phone: payload.phone,
+                            email: payload.email,
+                            plan_id: payload.plan_id || null,
+                            pt_plan_id: payload.pt_plan_id || null,
+                            status: 'pending',
+                            address: payload.address,
+                            permissions: payload.permissions || [],
+                            assigned_trainer_id: payload.assigned_trainer_id || null
+                        })
+                        .select()
+                        .maybeSingle());
+                }
                 break;
 
             case 'update':
@@ -198,11 +269,14 @@ serve(async (req) => {
                         role: payload.role?.toLowerCase(),
                         plan_id: payload.plan_id,
                         pt_plan_id: payload.pt_plan_id,
-                        address: payload.address
+                        address: payload.address,
+                        permissions: payload.permissions,
+                        assigned_trainer_id: payload.assigned_trainer_id
                     })
                     .eq('id', payload.id)
-                    .select()
                     .maybeSingle();
+
+                if (inviteError) throw inviteError;
 
                 if (inviteUpdate) {
                     result = inviteUpdate;
@@ -214,7 +288,9 @@ serve(async (req) => {
                 if (payload.name) profileUpdates.full_name = payload.name;
                 if (payload.phone) profileUpdates.phone_number = payload.phone;
                 if (payload.role) profileUpdates.role = payload.role.toLowerCase();
+                if (payload.role) profileUpdates.role = payload.role.toLowerCase();
                 if (payload.address) profileUpdates.address = payload.address;
+                if (payload.assigned_trainer_id !== undefined) profileUpdates.assigned_trainer_id = payload.assigned_trainer_id;
 
                 const { data: profileUpdate, error: profileError } = await supabaseClient
                     .from('profiles')
@@ -222,10 +298,35 @@ serve(async (req) => {
                     .eq('user_id', payload.id)
                     .eq('gym_code', gymCode)
                     .select()
-                    .single();
+                    .maybeSingle();
+
+                if (profileError) throw profileError;
+
+                if (!profileUpdate) {
+                    console.log("Warning: Profile update returned no rows for ID:", payload.id);
+                    // Do not throw error here, just return success status
+                }
+                result = profileUpdate;
 
                 if (profileError) throw profileError;
                 result = profileUpdate;
+
+                // 2b. Update Branch User Permissions (if applicable)
+                if (payload.permissions !== undefined && branchUser.branch_id) {
+                    // Update permissions for the user in this specific branch
+                    const { error: permError } = await supabaseClient
+                        .from('branch_users')
+                        .update({ permissions: payload.permissions })
+                        .eq('user_id', payload.id)
+                        .eq('branch_id', branchUser.branch_id);
+
+                    if (permError) {
+                        console.error("Failed to update permissions:", permError);
+                        // We might not throw here to avoid failing the whole profile update if just perms fail, 
+                        // but usually it's better to be strict.
+                        throw permError;
+                    }
+                }
 
                 // 3. Update Subscription for Active User
                 if (payload.plan_id || payload.pt_plan_id !== undefined) {
@@ -266,7 +367,7 @@ serve(async (req) => {
                     .eq('user_id', payload.id)
                     .eq('gym_code', gymCode)
                     .select()
-                    .single());
+                    .maybeSingle());
                 break;
 
             default:

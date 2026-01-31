@@ -55,23 +55,36 @@ serve(async (req) => {
             console.log("Profiles GET. AuthUser:", userId, "RequestedUser:", requestedUserId, "URL:", req.url);
             const targetId = requestedUserId || userId;
 
-            const { data: profile, error } = await supabaseClient
+            const { data: profiles, error } = await supabaseClient
                 .from('profiles')
                 .select('*')
                 .eq('user_id', targetId)
-                .single();
+                .limit(1);
+
             if (error) throw error;
 
+            // Handle if no profile found
+            if (!profiles || profiles.length === 0) {
+                return new Response(JSON.stringify({ error: "Profile not found" }), {
+                    status: 404,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            const profile = profiles[0];
+
             // Fetch trainer info if it exists (for Members)
-            const { data: trainerRelation } = await supabaseClient
+            // Fetch trainer info if it exists (for Members)
+            // Use limit(1) to avoid "Cannot coerce..." error if multiple records exist
+            const { data: trainerRelations } = await supabaseClient
                 .from('trainer_clients')
                 .select('trainer_id')
                 .eq('client_id', targetId)
-                .single();
+                .limit(1);
 
-            if (trainerRelation) {
+            if (trainerRelations && trainerRelations.length > 0) {
                 // @ts-ignore
-                profile.trainer_id = trainerRelation.trainer_id;
+                profile.trainer_id = trainerRelations[0].trainer_id;
             }
 
             return new Response(JSON.stringify(profile), {

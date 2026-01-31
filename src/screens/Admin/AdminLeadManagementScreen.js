@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal,
 import { Ionicons } from '@expo/vector-icons';
 import { adminApi } from '../../services/adminApi';
 
-const AdminLeadManagementScreen = ({ navigation }) => {
+const AdminLeadManagementScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     const [selectedLead, setSelectedLead] = useState(null);
     const [detailsPanelVisible, setDetailsPanelVisible] = useState(false);
     const [addLeadModalVisible, setAddLeadModalVisible] = useState(false);
@@ -36,7 +37,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
     const fetchLeads = async () => {
         setIsLoading(true);
         try {
-            const data = await adminApi.getLeads();
+            const data = await adminApi.getLeads(branchId);
             setLeads(data || []);
         } catch (error) {
             console.error("Failed to fetch leads:", error);
@@ -58,7 +59,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
 
     const fetchTrainers = async () => {
         try {
-            const users = await adminApi.getUsers();
+            const users = await adminApi.getUsers(branchId);
             if (users) {
                 const trainerList = users.filter(u => u.role === 'trainer' || u.role === 'Trainer');
                 setTrainers(trainerList);
@@ -76,7 +77,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
 
         try {
             setIsLoading(true);
-            const createdLead = await adminApi.createLead(newLead);
+            const createdLead = await adminApi.createLead(newLead, branchId);
             setLeads([createdLead, ...leads]);
             setAddLeadModalVisible(false);
             setNewLead({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '' });
@@ -91,7 +92,7 @@ const AdminLeadManagementScreen = ({ navigation }) => {
     const handleUpdateStatus = async (leadId, newStatus, extraUpdates = {}) => {
         setIsUpdating(true);
         try {
-            const updatedLead = await adminApi.updateLead({ id: leadId, status: newStatus, ...extraUpdates });
+            const updatedLead = await adminApi.updateLead({ id: leadId, status: newStatus, ...extraUpdates }, branchId);
             setLeads(leads.map(l => l.id === leadId ? { ...l, ...updatedLead } : l));
             if (selectedLead && selectedLead.id === leadId) {
                 setSelectedLead({ ...selectedLead, ...updatedLead });

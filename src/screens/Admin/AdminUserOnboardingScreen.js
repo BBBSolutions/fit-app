@@ -15,6 +15,7 @@ const normalizeRole = (role) => {
 
 
 const AdminUserOnboardingScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -52,8 +53,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
         setLoading(true);
         try {
             const [usersData, plansData] = await Promise.all([
-                adminApi.getUsers(),
-                adminApi.getPlans()
+                adminApi.getUsers(branchId),
+                adminApi.getPlans(branchId) // Assuming getPlans also filters by gym_code/branch
             ]);
 
             if (Array.isArray(usersData)) {
@@ -64,7 +65,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     email: u.email || '',
                     role: normalizeRole(u.role),
                     gymId: u.gym_code || '-',
-                    assignedTrainer: '-',
+                    assignedTrainerId: u.assigned_trainer_id || null, // Capture ID
+                    assignedTrainer: u.assigned_trainer_name || '-',  // Capture Name
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
@@ -88,7 +90,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const data = await adminApi.getUsers();
+            const data = await adminApi.getUsers(branchId);
             if (Array.isArray(data)) {
                 // Map backend fields to frontend model if needed
                 const mappedUsers = data.map(u => ({
@@ -98,7 +100,9 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     email: u.email || '',
                     role: normalizeRole(u.role),
                     gymId: u.gym_code || '-',
-                    assignedTrainer: '-', // Relationship not yet fetched
+                    gymId: u.gym_code || '-',
+                    assignedTrainerId: u.assigned_trainer_id || null, // Capture ID
+                    assignedTrainer: u.assigned_trainer_name || '-',  // Capture Name
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
@@ -132,7 +136,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     const handleDeleteUser = async (id) => {
         if (confirm('Are you sure you want to remove this user from the gym?')) {
             try {
-                await adminApi.deleteUser(id);
+                await adminApi.deleteUser(id, branchId);
                 setUsers(users.filter(u => u.id !== id));
             } catch (error) {
                 alert('Failed to delete user');
@@ -142,7 +146,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     };
 
     const handleSaveUser = async () => {
-        if (!currentUser.name) { // Phone is optional in some cases, but check required fields
+        if (!currentUser.name) {
             alert('Please fill in required fields');
             return;
         }
@@ -158,8 +162,9 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     role: currentUser.role,
                     address: currentUser.address,
                     plan_id: currentUser.plan_id,
-                    pt_plan_id: currentUser.pt_plan_id
-                });
+                    pt_plan_id: currentUser.pt_plan_id,
+                    assigned_trainer_id: currentUser.assignedTrainerId
+                }, branchId);
 
                 // Refresh list locally or fetch
                 setUsers(users.map(u => u.id === currentUser.id ? { ...u, ...currentUser } : u));
@@ -172,15 +177,16 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     role: currentUser.role,
                     address: currentUser.address,
                     plan_id: currentUser.plan_id,
-                    pt_plan_id: currentUser.pt_plan_id
-                });
+                    pt_plan_id: currentUser.pt_plan_id,
+                    assigned_trainer_id: currentUser.assignedTrainerId
+                }, branchId);
 
                 // Refresh list from backend (which now includes the pending user)
                 await fetchUsers();
 
                 if (convertingLeadId) {
                     try {
-                        await adminApi.updateLead({ id: convertingLeadId, status: 'Converted' });
+                        await adminApi.updateLead({ id: convertingLeadId, status: 'Converted' }, branchId);
                     } catch (e) {
                         console.error("Failed to update lead status", e);
                     }
@@ -279,7 +285,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     const performBulkImport = async (usersToImport) => {
         setLoading(true);
         try {
-            await adminApi.bulkCreateUsers(usersToImport);
+            await adminApi.bulkCreateUsers(usersToImport, branchId);
             Alert.alert("Success", "Users imported successfully");
             fetchUsers();
         } catch (error) {
@@ -311,10 +317,10 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                         <Ionicons name="grid-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Dashboard</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
                         <Ionicons name="document-text-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Content</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
                         <Ionicons name="funnel-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Leads</Text>
@@ -338,10 +344,10 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
                         <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Analytics</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                 </View>
             )}
 
@@ -617,12 +623,22 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                                 </View>
 
                                 <Text style={styles.label}>Assigned Trainer</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={currentUser?.assignedTrainer}
-                                    onChangeText={(t) => setCurrentUser({ ...currentUser, assignedTrainer: t })}
-                                    placeholder="Select Trainer"
-                                />
+                                <View style={styles.pickerContainer}>
+                                    <Dropdown
+                                        style={styles.dropdown}
+                                        placeholderStyle={styles.placeholderStyle}
+                                        selectedTextStyle={styles.selectedTextStyle}
+                                        data={users.filter(u => u.role === 'Trainer')}
+                                        maxHeight={300}
+                                        labelField="name"
+                                        valueField="id"
+                                        placeholder="Select Trainer (Optional)"
+                                        value={currentUser?.assignedTrainerId}
+                                        onChange={item => {
+                                            setCurrentUser({ ...currentUser, assignedTrainerId: item.id, assignedTrainer: item.name });
+                                        }}
+                                    />
+                                </View>
                             </>
                         )}
 

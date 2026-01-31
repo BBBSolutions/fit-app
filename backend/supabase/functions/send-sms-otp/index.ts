@@ -21,7 +21,11 @@ serve(async (req) => {
             throw new Error("Missing phone or OTP in request body");
         }
 
-        console.log(`Sending OTP to ${phone}`);
+        // MSG91 usually expects number with country code but no + (e.g. 919876543210)
+        const formattedPhone = phone.replace('+', '');
+
+        console.log(`Sending OTP to ${formattedPhone} (Original: ${phone})`);
+
 
         // Construct MSG91 URL (Using Flow or Standard API)
         // Assuming using the modern Flow API or Standard Send API.
@@ -45,7 +49,7 @@ serve(async (req) => {
                 template_id: MSG91_TEMPLATE_ID,
                 sender: MSG91_SENDER_ID,
                 short_url: "0",
-                mobiles: phone,
+                mobiles: formattedPhone,
                 // Variables mapped in your MSG91 template
                 // e.g., if template satisfies "Your OTP is ##OTP##"
                 otp: otp,

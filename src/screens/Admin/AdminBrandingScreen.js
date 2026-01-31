@@ -9,7 +9,8 @@ import * as FileSystem from 'expo-file-system'; // For reading file as base64 (i
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
-const AdminBrandingScreen = ({ navigation }) => {
+const AdminBrandingScreen = ({ navigation, route }) => {
+    const { branchId } = route.params || {}; // Get branchId from navigation params
     const [gymName, setGymName] = useState('FitLife Gym');
     const [primaryColor, setPrimaryColor] = useState('#3182CE');
     const [secondaryColor, setSecondaryColor] = useState('#2D3748');
@@ -27,7 +28,7 @@ const AdminBrandingScreen = ({ navigation }) => {
     const fetchBranding = async () => {
         try {
             setLoading(true);
-            const data = await adminApi.fetchBranding();
+            const data = await adminApi.fetchBranding(branchId);
             if (data) {
                 setGymName(data.gymName || 'FitLife Gym');
                 if (data.branding) {
@@ -56,7 +57,7 @@ const AdminBrandingScreen = ({ navigation }) => {
                     accentColor,
                     logo
                 }
-            });
+            }, branchId);
             setHasUnsavedChanges(false);
             Alert.alert('Success', 'Branding settings saved!');
         } catch (error) {
@@ -141,10 +142,10 @@ const AdminBrandingScreen = ({ navigation }) => {
                         <Ionicons name="grid-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Dashboard</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
                         <Ionicons name="document-text-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Content</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
                         <Ionicons name="funnel-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Leads</Text>
@@ -168,10 +169,10 @@ const AdminBrandingScreen = ({ navigation }) => {
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
                         <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Analytics</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                 </View>
             )}
 
