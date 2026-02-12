@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { AppState } from 'react-native';
-import { supabase as supabaseClient } from '../services/supabaseClient';
 import { supabase } from '../config/supabaseAuth';
 import { api } from '../services/api';
 
@@ -83,7 +82,7 @@ export const ChatProvider = ({ children }) => {
 
         return () => {
             appStateSubscription.remove();
-            supabaseClient.removeChannel(channel);
+            supabase.removeChannel(channel);
             if (subscription) subscription.unsubscribe();
         };
     }, [currentUserId]);

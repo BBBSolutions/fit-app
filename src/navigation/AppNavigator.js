@@ -17,6 +17,7 @@ import TrainerClientProgressScreen from '../screens/Trainer/TrainerClientProgres
 import TrainerDetails from '../screens/Trainer/TrainerDetails';
 import EditWorkoutPlanScreen from '../screens/Shared/EditWorkoutPlanScreen';
 import MemberCreateWorkoutScreen from '../screens/Member/MemberCreateWorkoutScreen';
+import WorkoutResultsScreen from '../screens/Member/WorkoutResultsScreen';
 import MessagesScreen from '../screens/Member/MessagesScreen';
 import AdminBrandingScreen from '../screens/Admin/AdminBrandingScreen';
 import AdminUserOnboardingScreen from '../screens/Admin/AdminUserOnboardingScreen';
@@ -64,7 +65,7 @@ const AppNavigator = () => {
                 <Stack.Screen name="Messages" component={MessagesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
                 <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
-                <Stack.Screen name="WorkoutResults" component={require('../screens/Member/WorkoutResultsScreen').default} />
+                <Stack.Screen name="WorkoutResults" component={WorkoutResultsScreen} />
                 <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
                 <Stack.Screen name="OwnerBranchList" component={OwnerBranchListScreen} />
                 <Stack.Screen name="AdminCreateBranch" component={AdminCreateBranchScreen} options={{ headerShown: false }} />

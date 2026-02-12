@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MemberHomeDashboardScreen from '../screens/Member/MemberHomeDashboardScreen';
 import WorkoutPlansScreen from '../screens/Member/WorkoutPlansScreen';
@@ -16,6 +17,7 @@ const Tab = createBottomTabNavigator();
 
 const MainBottomTabs = () => {
     const { unreadCount } = useChat();
+    const insets = useSafeAreaInsets();
 
     React.useEffect(() => {
         setupNotifications();
@@ -35,7 +37,7 @@ const MainBottomTabs = () => {
                         iconName = focused ? 'bar-chart' : 'bar-chart-outline';
                     } else if (route.name === 'Messages') {
                         iconName = focused ? 'chatbubble' : 'chatbubble-outline';
-                    } else if (route.name === 'Profile') {
+                    } else {
                         iconName = focused ? 'person' : 'person-outline';
                     }
 
@@ -46,19 +48,17 @@ const MainBottomTabs = () => {
                 tabBarShowLabel: true,
                 headerShown: false,
                 tabBarStyle: {
-                    height: 70,
-                    paddingBottom: 10,
-                    paddingTop: 10,
+                    minHeight: 60 + insets.bottom,
+                    paddingBottom: Math.max(insets.bottom, 8),
+                    paddingTop: 8,
                     backgroundColor: '#FFFFFF',
-                    borderTopLeftRadius: 20,
-                    borderTopRightRadius: 20,
-                    borderTopWidth: 0,
+                    borderTopWidth: Platform.OS === 'web' ? 1 : 0,
+                    borderTopColor: '#E2E8F0',
                     shadowColor: '#000',
                     shadowOffset: { width: 0, height: -2 },
-                    shadowOpacity: 0.1,
+                    shadowOpacity: 0.08,
                     shadowRadius: 8,
-                    elevation: 10,
-                    position: 'absolute',
+                    elevation: 8,
                 },
                 tabBarLabelStyle: {
                     fontSize: 11,
