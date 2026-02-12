@@ -13,31 +13,23 @@ import GradientBackground from './GradientBackground';
 /**
  * ScreenWrapper - A consistent wrapper for all screens.
  * Handles Safe Area, Status Bar, Keyboard Avoiding, and Backgrounds.
- * 
- * @param {ReactNode} children - Screen content
- * @param {Boolean} useGradient - Use global gradient background? (default: false)
- * @param {String} backgroundColor - Custom background color (default: colors.background.primary)
- * @param {String} statusBarColor - Status bar color (default: 'dark-content')
- * @param {Boolean} keyboardAvoiding - Enable KeyboardAvoidingView? (default: true)
- * @param {Object} style - Additional styles for the container
  */
 const ScreenWrapper = ({
     children,
-    useGradient = false, // If true, uses GradientBackground
+    useGradient = false,
     backgroundColor = colors.background.primary,
     statusBarColor = 'dark-content',
     keyboardAvoiding = true,
+    safeAreaEdges = ['top', 'left', 'right', 'bottom'],
     style,
     ...props
 }) => {
-
-    // Choose the core container
     const Container = useGradient ? GradientBackground : View;
     const containerStyle = useGradient ? {} : { backgroundColor };
 
-    const WrapperContent = (
-        <SafeAreaView style={[styles.safeArea, style]} edges={['top', 'left', 'right']}>
-            <StatusBar barStyle={statusBarColor} backgroundColor="transparent" translucent={true} />
+    const wrapperContent = (
+        <SafeAreaView style={[styles.safeArea, style]} edges={safeAreaEdges}>
+            <StatusBar barStyle={statusBarColor} backgroundColor="transparent" translucent={Platform.OS === 'android'} />
             {children}
         </SafeAreaView>
     );
@@ -46,13 +38,13 @@ const ScreenWrapper = ({
         <Container style={[styles.container, containerStyle]} {...props}>
             {keyboardAvoiding ? (
                 <KeyboardAvoidingView
-                    style={{ flex: 1 }}
+                    style={styles.container}
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 >
-                    {WrapperContent}
+                    {wrapperContent}
                 </KeyboardAvoidingView>
             ) : (
-                WrapperContent
+                wrapperContent
             )}
         </Container>
     );

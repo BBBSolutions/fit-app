@@ -1,5 +1,21 @@
-export const SUPABASE_PROJECT_REF = 'wlcrbwansdbzanpovztq';
+import Constants from 'expo-constants';
+
+const extra = Constants?.expoConfig?.extra ?? {};
+
+export const SUPABASE_PROJECT_REF =
+    process.env.EXPO_PUBLIC_SUPABASE_PROJECT_REF ||
+    extra.supabaseProjectRef ||
+    'wlcrbwansdbzanpovztq';
+
 export const SUPABASE_URL = `https://${SUPABASE_PROJECT_REF}.supabase.co`;
 export const API_BASE_URL = `${SUPABASE_URL}/functions/v1`;
 export const SUPABASE_REST_URL = `${SUPABASE_URL}/rest/v1`;
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsY3Jid2Fuc2RiemFucG92enRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0MzkzOTEsImV4cCI6MjA4MTAxNTM5MX0.M48rIAIX7Ho26ZutvF48I7XtaIhIBLHU8Of0Uh36yFw';
+
+export const SUPABASE_ANON_KEY =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+    extra.supabaseAnonKey ||
+    '';
+
+if (!SUPABASE_ANON_KEY) {
+    console.warn('SUPABASE_ANON_KEY is missing. Set EXPO_PUBLIC_SUPABASE_ANON_KEY or expo.extra.supabaseAnonKey.');
+}

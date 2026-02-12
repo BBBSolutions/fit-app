@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-
-const { width } = Dimensions.get('window');
+import ScreenWrapper from '../../components/ScreenWrapper';
 
 const WelcomeScreen = ({ navigation }) => {
-    const [view, setView] = useState('main'); // 'main', 'new', 'existing'
+    const [view, setView] = useState('main');
 
     const renderMain = () => (
         <View style={styles.content}>
@@ -17,12 +15,12 @@ const WelcomeScreen = ({ navigation }) => {
             </View>
 
             <View style={styles.actions}>
-                <TouchableOpacity style={styles.primaryButton} onPress={() => setView('new')}>
+                <TouchableOpacity style={styles.primaryButton} onPress={() => setView('new')} accessibilityRole="button">
                     <Text style={styles.primaryButtonText}>I'm New</Text>
                     <Ionicons name="arrow-forward" size={20} color="#FFF" />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => setView('existing')}>
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => setView('existing')} accessibilityRole="button">
                     <Text style={styles.secondaryButtonText}>I have an account</Text>
                 </TouchableOpacity>
             </View>
@@ -31,7 +29,7 @@ const WelcomeScreen = ({ navigation }) => {
 
     const renderNewUserOptions = () => (
         <View style={styles.content}>
-            <TouchableOpacity onPress={() => setView('main')} style={styles.backButton}>
+            <TouchableOpacity onPress={() => setView('main')} style={styles.backButton} accessibilityRole="button">
                 <Ionicons name="arrow-back" size={24} color="#4A5568" />
             </TouchableOpacity>
 
@@ -40,6 +38,7 @@ const WelcomeScreen = ({ navigation }) => {
             <TouchableOpacity
                 style={styles.optionCard}
                 onPress={() => navigation.navigate('GymOwnerSignup')}
+                accessibilityRole="button"
             >
                 <View style={[styles.iconBox, { backgroundColor: '#EBF8FF' }]}>
                     <Ionicons name="business" size={28} color="#3182CE" />
@@ -53,7 +52,8 @@ const WelcomeScreen = ({ navigation }) => {
 
             <TouchableOpacity
                 style={styles.optionCard}
-                onPress={() => navigation.navigate('Login')} // Individuals skip GymCode for now, or flow updates
+                onPress={() => navigation.navigate('Login')}
+                accessibilityRole="button"
             >
                 <View style={[styles.iconBox, { backgroundColor: '#F0FFF4' }]}>
                     <Ionicons name="person" size={28} color="#38A169" />
@@ -69,7 +69,7 @@ const WelcomeScreen = ({ navigation }) => {
 
     const renderExistingUserOptions = () => (
         <View style={styles.content}>
-            <TouchableOpacity onPress={() => setView('main')} style={styles.backButton}>
+            <TouchableOpacity onPress={() => setView('main')} style={styles.backButton} accessibilityRole="button">
                 <Ionicons name="arrow-back" size={24} color="#4A5568" />
             </TouchableOpacity>
 
@@ -78,6 +78,7 @@ const WelcomeScreen = ({ navigation }) => {
             <TouchableOpacity
                 style={styles.optionCard}
                 onPress={() => navigation.navigate('AdminLogin')}
+                accessibilityRole="button"
             >
                 <View style={[styles.iconBox, { backgroundColor: '#E9D8FD' }]}>
                     <Ionicons name="briefcase" size={28} color="#805AD5" />
@@ -91,7 +92,8 @@ const WelcomeScreen = ({ navigation }) => {
 
             <TouchableOpacity
                 style={styles.optionCard}
-                onPress={() => navigation.navigate('GymCode')} // Standard flow
+                onPress={() => navigation.navigate('GymCode')}
+                accessibilityRole="button"
             >
                 <View style={[styles.iconBox, { backgroundColor: '#EDF2F7' }]}>
                     <Ionicons name="people" size={28} color="#4A5568" />
@@ -106,29 +108,30 @@ const WelcomeScreen = ({ navigation }) => {
     );
 
     return (
-        <View style={styles.container}>
-            {view === 'main' && renderMain()}
-            {view === 'new' && renderNewUserOptions()}
-            {view === 'existing' && renderExistingUserOptions()}
-        </View>
+        <ScreenWrapper backgroundColor="#F7FAFC" keyboardAvoiding={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                {view === 'main' && renderMain()}
+                {view === 'new' && renderNewUserOptions()}
+                {view === 'existing' && renderExistingUserOptions()}
+            </ScrollView>
+        </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F7FAFC',
+    scrollContent: {
+        flexGrow: 1,
         justifyContent: 'center',
     },
     content: {
-        padding: 32,
+        padding: 24,
         maxWidth: 500,
         width: '100%',
         alignSelf: 'center',
     },
     header: {
         alignItems: 'center',
-        marginBottom: 60,
+        marginBottom: 48,
     },
     title: {
         fontSize: 32,
@@ -206,6 +209,7 @@ const styles = StyleSheet.create({
         elevation: 2,
         borderWidth: 1,
         borderColor: '#EDF2F7',
+        minHeight: 72,
     },
     iconBox: {
         width: 56,

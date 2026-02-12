@@ -4,6 +4,8 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api } from './api';
 
+let notificationsInitialized = false;
+
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
@@ -13,7 +15,10 @@ Notifications.setNotificationHandler({
 });
 
 export const registerForPushNotificationsAsync = async () => {
-    let token;
+    if (Platform.OS === 'web') {
+        console.log('Push notifications on web are not enabled yet.');
+        return null;
+    }
 
     if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
@@ -24,65 +29,54 @@ export const registerForPushNotificationsAsync = async () => {
         });
     }
 
-    if (Platform.OS === 'web') {
-        console.log("Push notifications on Web require VAPID key setup. Skipping for now.");
-        // alert("Web Push skipped used console for details");
-        return;
+    if (!Device.isDevice) {
+        console.log('Push notifications require a physical device.');
+        return null;
     }
 
-    if (Device.isDevice) {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-        if (existingStatus !== 'granted') {
-            const { status } = await Notifications.requestPermissionsAsync();
-            finalStatus = status;
-        }
-        if (finalStatus !== 'granted') {
-            alert('Failed to get push token for push notification!');
-            return;
-        }
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
-        // Learn more about projectId:
-        // https://docs.expo.dev/push-notifications/push-notifications-setup/#configure-projectid
-        try {
-            const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-
-            if (!projectId) {
-                console.log("No EAS Project ID found.");
-                alert("Push Notifications require an EAS Project ID.\nPlease run 'npx eas init' in your terminal to set it up.");
-                return null;
-            }
-
-            // For now, simpler call often works without project ID if not using EAS strict
-            token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-            console.log("Expo Push Token:", token);
-            alert(`Push Token Generated: ${token.substring(0, 10)}...`);
-        } catch (e) {
-            console.log("Error getting token:", e);
-            if (e.message.includes('projectId')) {
-                alert("Push Notifications require an EAS Project ID.\nPlease run 'npx eas init' in your terminal.");
-            } else {
-                alert(`Failed to get Push Token: ${e.message}`);
-            }
-        }
-    } else {
-        alert('Must use physical device for Push Notifications');
-        console.log("Must use physical device for Push Notifications");
+    if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
     }
 
-    return token;
+    if (finalStatus !== 'granted') {
+        console.log('Push notification permission not granted.');
+        return null;
+    }
+
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) {
+        console.log('No EAS Project ID found; skipping push token registration.');
+        return null;
+    }
+
+    try {
+        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        console.log('Expo Push Token acquired.');
+        return token;
+    } catch (error) {
+        console.log('Error getting Expo push token:', error);
+        return null;
+    }
 };
 
 export const setupNotifications = async () => {
+    if (notificationsInitialized) {
+        return;
+    }
+
+    notificationsInitialized = true;
+
     try {
         const token = await registerForPushNotificationsAsync();
         if (token) {
-            // Send to backend
             await api.savePushToken(token);
-            console.log("Token saved to backend");
+            console.log('Push token saved to backend.');
         }
     } catch (error) {
-        console.log("Error setting up notifications:", error);
-        alert("Failed to setup notifications: " + error.message);
+        console.log('Error setting up notifications:', error);
     }
 };

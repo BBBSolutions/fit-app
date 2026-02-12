@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TrainerDashboardScreen from '../screens/Trainer/TrainerDashboardScreen';
 import TrainerClientListScreen from '../screens/Trainer/TrainerClientListScreen';
@@ -19,6 +20,7 @@ const Tab = createBottomTabNavigator();
 
 const TrainerBottomTabs = () => {
     const { unreadCount } = useChat();
+    const insets = useSafeAreaInsets();
 
     React.useEffect(() => {
         setupNotifications();
@@ -27,7 +29,6 @@ const TrainerBottomTabs = () => {
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
-                // ... (Keep existing screenOptions - omitted for brevity in replace call if contiguous, but here we replace block)
                 tabBarIcon: ({ focused, color, size }) => {
                     let iconName;
 
@@ -39,11 +40,10 @@ const TrainerBottomTabs = () => {
                         iconName = focused ? 'calendar' : 'calendar-outline';
                     } else if (route.name === 'Messages') {
                         iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-                    } else if (route.name === 'Profile') {
+                    } else {
                         iconName = focused ? 'person' : 'person-outline';
                     }
 
-                    // Return icon with gradient overlay for active state
                     return (
                         <Ionicons
                             name={iconName}
@@ -57,19 +57,17 @@ const TrainerBottomTabs = () => {
                 tabBarShowLabel: true,
                 headerShown: false,
                 tabBarStyle: {
-                    height: 70,
-                    paddingBottom: 10,
-                    paddingTop: 10,
+                    minHeight: 60 + insets.bottom,
+                    paddingBottom: Math.max(insets.bottom, 8),
+                    paddingTop: 8,
                     backgroundColor: colors.white,
-                    borderTopLeftRadius: 20,
-                    borderTopRightRadius: 20,
-                    borderTopWidth: 0,
+                    borderTopWidth: Platform.OS === 'web' ? 1 : 0,
+                    borderTopColor: colors.gray[200],
                     shadowColor: '#000',
                     shadowOffset: { width: 0, height: -4 },
                     shadowOpacity: 0.1,
                     shadowRadius: 12,
-                    elevation: 15,
-                    position: 'absolute',
+                    elevation: 12,
                 },
                 tabBarLabelStyle: {
                     fontSize: typography.fontSize.xs,
@@ -82,7 +80,6 @@ const TrainerBottomTabs = () => {
                 tabBarIconStyle: {
                     marginBottom: -4,
                 },
-                // Custom background for active tab
                 tabBarBackground: () => (
                     <LinearGradient
                         colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 1)']}
