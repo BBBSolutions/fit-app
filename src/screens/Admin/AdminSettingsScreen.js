@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, useWindowDimensions, Switch, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { adminApi } from '../../services/adminApi';
 
 
@@ -17,11 +18,13 @@ const AdminSettingsScreen = ({ navigation, route }) => {
     const [billing, setBilling] = useState({ currency: 'USD', autoCancel: false, emailReminders: true, tax: '8.875' });
 
     // Fetch Settings
-    React.useEffect(() => {
-        if (activeSection === 'General') {
-            fetchGeneralSettings();
-        }
-    }, [activeSection]);
+    useFocusEffect(
+        React.useCallback(() => {
+            if (activeSection === 'General' && branchId) {
+                fetchGeneralSettings();
+            }
+        }, [activeSection, branchId])
+    );
 
     const fetchGeneralSettings = async () => {
         setIsLoading(true);
@@ -270,6 +273,7 @@ const AdminSettingsScreen = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
+            {/* Main Sidebar (App Nav) - Desktop Only */}
             {/* Main Sidebar (App Nav) - Desktop Only */}
             {!isMobile && (
                 <View style={styles.mainSidebar}>

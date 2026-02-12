@@ -5,19 +5,18 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    SafeAreaView,
-    Modal,
-    Animated,
     RefreshControl,
-    Dimensions // Added
+    Dimensions
 } from 'react-native';
-import { BarChart } from "react-native-chart-kit"; // Added
+import { BarChart } from "react-native-chart-kit";
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../../services/api';
 import { useChat } from '../../context/ChatContext';
-import GradientBackground from '../../components/GradientBackground';
+
+// UI Components
+import ScreenWrapper from '../../components/ScreenWrapper';
 import GradientCard from '../../components/GradientCard';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme/theme';
 
@@ -55,7 +54,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
             }
 
             if (Array.isArray(clients)) {
-                console.log("Dashboard: Fetched clients:", clients.length);
+                // console.log("Dashboard: Fetched clients:", clients.length);
                 setClientCount(clients.length);
 
                 // Fetch assignments for all clients
@@ -115,8 +114,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                     });
                 });
 
-                // 3. New Clients (simulated by just checking recent addition to list if we had created_at, 
-                // but since we might not, we can just generic message if list > 0 and no other notifs)
+                // 3. New Clients
                 if (newNotifications.length === 0 && clients.length > 0) {
                     newNotifications.push({
                         id: 'generic-1',
@@ -176,8 +174,8 @@ const TrainerDashboardScreen = ({ navigation }) => {
     }, [allAssignments, filterMode, selectedDate]);
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            {/* Header */}
+        <ScreenWrapper useGradient={true} style={styles.container}>
+            {/* Header - Transparent to show gradient */}
             <View style={styles.headerContainer}>
                 <View style={styles.header}>
                     <View>
@@ -191,59 +189,44 @@ const TrainerDashboardScreen = ({ navigation }) => {
             </View>
 
             <ScrollView
-                style={styles.container}
+                style={styles.scrollView}
                 contentContainerStyle={styles.contentContainer}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.trainer.primary} />}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.white} />}
             >
-
-                {/* 2. Quick Stats Section using GradientCards */}
+                {/* 2. Quick Stats Section */}
                 <View style={styles.statsRow}>
-                    <View style={[styles.gradientStatCard, { padding: 0, backgroundColor: 'transparent' }]}>
+                    <GradientCard
+                        gradientBorder={false} // Use solid bg or internal gradient
+                        style={[styles.statCardWrapper, { backgroundColor: 'transparent' }]}
+                        contentStyle={{ padding: 0, backgroundColor: 'transparent' }}
+                        fullHeight={true}
+                    >
                         <LinearGradient
                             colors={['#4299E1', '#3182CE']}
-                            style={{ flex: 1, borderRadius: borderRadius.lg, width: '100%', alignItems: 'center', justifyContent: 'center' }}
+                            style={styles.gradientStatContent}
                         >
-                            <View style={styles.statContent}>
-                                <Ionicons name="people" size={28} color="#FFF" />
-                                <Text style={styles.statValueLight}>{clientCount}</Text>
-                                <Text style={styles.statLabelLight}>Active Clients</Text>
-                            </View>
+                            <Ionicons name="people" size={28} color="#FFF" />
+                            <Text style={styles.statValueLight}>{clientCount}</Text>
+                            <Text style={styles.statLabelLight}>Active Clients</Text>
                         </LinearGradient>
-                    </View>
+                    </GradientCard>
 
-                    <View style={styles.statCard}>
-                        <Ionicons name="document-text" size={28} color={colors.warning} />
-                        <Text style={styles.statValue}>0</Text>
-                        <Text style={styles.statLabel}>Pending Reviews</Text>
-                    </View>
+                    <GradientCard style={styles.statCardWrapper} fullHeight={true}>
+                        <View style={styles.statContent}>
+                            <Ionicons name="document-text" size={28} color={colors.warning} />
+                            <Text style={styles.statValue}>0</Text>
+                            <Text style={styles.statLabel}>Pending Reviews</Text>
+                        </View>
+                    </GradientCard>
 
-                    <View style={styles.statCard}>
-                        <Ionicons name="calendar" size={28} color={colors.success} />
-                        <Text style={styles.statValue}>{displayedAssignments ? displayedAssignments.length : 0}</Text>
-                        <Text style={styles.statLabel}>Visible Plans</Text>
-                    </View>
+                    <GradientCard style={styles.statCardWrapper} fullHeight={true}>
+                        <View style={styles.statContent}>
+                            <Ionicons name="calendar" size={28} color={colors.success} />
+                            <Text style={styles.statValue}>{displayedAssignments ? displayedAssignments.length : 0}</Text>
+                            <Text style={styles.statLabel}>Visible Plans</Text>
+                        </View>
+                    </GradientCard>
                 </View>
-
-                {/* 3. Pending AI Plan Reviews - COMMENTED OUT
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Pending AI Plan Reviews</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        {pendingReviews.map((review) => (
-                            <View key={review.id} style={styles.reviewCard}>
-                                <Text style={styles.reviewClientName}>{review.clientName}</Text>
-                                <View style={styles.reviewGoalBadge}>
-                                    <Text style={styles.reviewGoalText}>{review.goal}</Text>
-                                </View>
-                                <Text style={styles.reviewWeek}>{review.week} • {review.day}</Text>
-                                <TouchableOpacity style={styles.reviewButton}>
-                                    <Text style={styles.reviewButtonText}>Review Plan</Text>
-                                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-                                </TouchableOpacity>
-                            </View>
-                        ))}
-                    </ScrollView>
-                </View>
-                */ }
 
                 {/* 4. Today's Schedule */}
                 <View style={styles.section}>
@@ -292,57 +275,60 @@ const TrainerDashboardScreen = ({ navigation }) => {
                             })}
                         </ScrollView>
                     )}
-                    {loadingSchedule ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyStateText}>Loading schedule...</Text>
-                        </View>
-                    ) : displayedAssignments.length === 0 ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyStateText}>
-                                {filterMode === 'date' ? 'No workouts for this date.' : 'No recent assignments.'}
-                            </Text>
-                        </View>
-                    ) : (
-                        displayedAssignments.map((session, index) => (
-                            <View key={session.id || index} style={styles.sessionCard}>
-                                <View style={styles.sessionTime}>
-                                    <Ionicons
-                                        name={session.status?.toLowerCase() === 'completed' ? "checkmark-circle" : "time-outline"}
-                                        size={20}
-                                        color={session.status?.toLowerCase() === 'completed' ? colors.success : "#3182CE"}
-                                    />
-                                    {/* Using assigned time or default */}
-                                    <Text style={styles.sessionTimeText}>
-                                        {new Date(session.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </Text>
-                                </View>
-                                <View style={styles.sessionInfo}>
-                                    <Text style={styles.sessionClientName}>{session.clientName}</Text>
-                                    <Text style={styles.sessionType}>{session.workout?.title || 'Workout'}</Text>
-                                    <Text style={styles.sessionStatus}>{session.status}</Text>
-                                </View>
-                                <TouchableOpacity
-                                    style={styles.sessionButton}
-                                    onPress={() => navigation.navigate('TrainerClientDetails', { clientId: session.client_id, initialTab: 'Workouts' })}
-                                >
-                                    <Ionicons name="chevron-forward-circle" size={24} color="#3182CE" />
-                                </TouchableOpacity>
+
+                    <GradientCard glassmorphic={true} style={{ padding: 0 }} contentStyle={{ padding: spacing.sm }}>
+                        {loadingSchedule ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyStateText}>Loading schedule...</Text>
                             </View>
-                        ))
-                    )}
+                        ) : displayedAssignments.length === 0 ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyStateText}>
+                                    {filterMode === 'date' ? 'No workouts for this date.' : 'No recent assignments.'}
+                                </Text>
+                            </View>
+                        ) : (
+                            displayedAssignments.map((session, index) => (
+                                <View key={session.id || index} style={styles.sessionCard}>
+                                    <View style={styles.sessionTime}>
+                                        <Ionicons
+                                            name={session.status?.toLowerCase() === 'completed' ? "checkmark-circle" : "time-outline"}
+                                            size={20}
+                                            color={session.status?.toLowerCase() === 'completed' ? colors.success : "#3182CE"}
+                                        />
+                                        {/* Using assigned time or default */}
+                                        <Text style={styles.sessionTimeText}>
+                                            {new Date(session.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.sessionInfo}>
+                                        <Text style={styles.sessionClientName}>{session.clientName}</Text>
+                                        <Text style={styles.sessionType}>{session.workout?.title || 'Workout'}</Text>
+                                        <Text style={styles.sessionStatus}>{session.status}</Text>
+                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.sessionButton}
+                                        onPress={() => navigation.navigate('TrainerClientDetails', { clientId: session.client_id, initialTab: 'Workouts' })}
+                                    >
+                                        <Ionicons name="chevron-forward-circle" size={24} color="#3182CE" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))
+                        )}
+                    </GradientCard>
                 </View>
 
                 {/* 5. Client Management Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Client Management</Text>
-                    <View style={styles.managementCard}>
+                    <GradientCard glassmorphic={true} contentStyle={{ padding: 0 }}>
                         <TouchableOpacity
                             style={styles.managementOption}
                             onPress={() => navigation.navigate('Clients')}
                         >
                             <Ionicons name="people-outline" size={24} color="#3182CE" />
                             <Text style={styles.managementText}>View All Clients</Text>
-                            <Ionicons name="chevron-forward" size={20} color="#A0AEC0" />
+                            <Ionicons name="chevron-forward" size={20} color="#666" />
                         </TouchableOpacity>
                         <View style={styles.managementDivider} />
                         <TouchableOpacity
@@ -351,15 +337,15 @@ const TrainerDashboardScreen = ({ navigation }) => {
                         >
                             <Ionicons name="chatbubbles-outline" size={24} color="#3182CE" />
                             <Text style={styles.managementText}>Messages / Chat</Text>
-                            <Ionicons name="chevron-forward" size={20} color="#A0AEC0" />
+                            <Ionicons name="chevron-forward" size={20} color="#666" />
                         </TouchableOpacity>
-                    </View>
+                    </GradientCard>
                 </View>
 
                 {/* 6. Performance Analytics */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Weekly Performance</Text>
-                    <View style={styles.analyticsCard}>
+                    <GradientCard glassmorphic={true}>
                         {allAssignments.length > 0 ? (
                             <View style={{ alignItems: 'center' }}>
                                 <BarChart
@@ -367,30 +353,27 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                         labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
                                         datasets: [{
                                             data: (() => {
-                                                // Aggregate assignments by day of week
-                                                const counts = [0, 0, 0, 0, 0, 0, 0]; // Mon-Sun
-                                                // Simplified: Just showing last 7 days distribution roughly mapped to Mon-Sun for demo
-                                                // For more accuracy, we'd map specific dates.
-                                                // Let's do simple day mapping from all assignments
-
+                                                const counts = [0, 0, 0, 0, 0, 0, 0];
                                                 allAssignments.forEach(w => {
                                                     if (!w.assigned_at) return;
-                                                    const day = new Date(w.assigned_at).getDay(); // 0=Sun, 1=Mon
-                                                    const index = day === 0 ? 6 : day - 1; // Shift to 0=Mon, 6=Sun
+                                                    const day = new Date(w.assigned_at).getDay();
+                                                    const index = day === 0 ? 6 : day - 1;
                                                     counts[index] += 1;
                                                 });
                                                 return counts;
                                             })()
                                         }]
                                     }}
-                                    width={Dimensions.get("window").width - 40} // Responsive width
+                                    width={Dimensions.get("window").width - 80} // Adjusted width for padding
                                     height={220}
                                     yAxisLabel=""
                                     yAxisSuffix=""
                                     chartConfig={{
-                                        backgroundColor: "#ffffff",
+                                        backgroundColor: "transparent",
                                         backgroundGradientFrom: "#ffffff",
                                         backgroundGradientTo: "#ffffff",
+                                        backgroundGradientFromOpacity: 0,
+                                        backgroundGradientToOpacity: 0,
                                         decimalPlaces: 0,
                                         color: (opacity = 1) => `rgba(49, 130, 206, ${opacity})`,
                                         labelColor: (opacity = 1) => `rgba(113, 128, 150, ${opacity})`,
@@ -430,13 +413,13 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                 <Text style={styles.metricLabel}>Active Clients</Text>
                             </View>
                         </View>
-                    </View>
+                    </GradientCard>
                 </View>
 
                 {/* 7. Notifications Panel */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Notifications</Text>
-                    <View style={styles.notificationsCard}>
+                    <GradientCard glassmorphic={true} contentStyle={{ padding: 0 }}>
                         {unreadCount > 0 && (
                             <TouchableOpacity
                                 style={styles.notificationItem}
@@ -463,7 +446,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                 No new notifications
                             </Text>
                         )}
-                    </View>
+                    </GradientCard>
                 </View>
 
                 <View style={styles.bottomSpacer} />
@@ -494,27 +477,19 @@ const TrainerDashboardScreen = ({ navigation }) => {
                     </TouchableOpacity>
                 </View>
             )}
-        </SafeAreaView>
+        </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: colors.trainer.background,
-    },
-    headerContainer: {
-        backgroundColor: colors.trainer.primary,
-        paddingHorizontal: spacing.xl,
-        paddingTop: spacing.lg,
-        paddingBottom: spacing.xxl,
-    },
     container: {
         flex: 1,
     },
-    contentContainer: {
-        padding: 20,
-        paddingBottom: 100,
+    headerContainer: {
+        // backgroundColor: colors.trainer.primary, // Removed for transparent gradient effect
+        paddingHorizontal: spacing.xl,
+        paddingTop: spacing.lg,
+        paddingBottom: spacing.xxl,
     },
     header: {
         flexDirection: 'row',
@@ -538,41 +513,42 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    scrollView: {
+        flex: 1,
+    },
+    contentContainer: {
+        padding: 20,
+        paddingBottom: 100,
+    },
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: -spacing.xxxl,
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 0,
         marginBottom: spacing.xxl,
-        paddingHorizontal: spacing.xl,
     },
-    statCard: {
-        backgroundColor: colors.white,
-        borderRadius: borderRadius.lg,
-        padding: spacing.md, // Reduced padding to fit 3 in row
+    statCardWrapper: {
         flex: 1,
-        alignItems: 'center',
-        marginHorizontal: 4, // Tighter margins
-        ...shadows.md,
-        minHeight: 110, // Ensure consistent height
-        justifyContent: 'center',
-    },
-    gradientStatCard: {
-        borderRadius: borderRadius.lg,
-        padding: spacing.md,
-        flex: 1,
-        alignItems: 'center',
-        marginHorizontal: 4,
-        ...shadows.md,
+        minWidth: 100, // Ensure they don't get too small before wrapping
         minHeight: 110,
+    },
+    gradientStatContent: {
+        flex: 1, // Now safe as GradientCard internals have flex: 1
+        borderRadius: borderRadius.lg,
+        width: '100%',
+        alignItems: 'center',
         justifyContent: 'center',
+        padding: spacing.md,
     },
     statContent: {
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
+        flex: 1, // Now safe as GradientCard internals have flex: 1
     },
     statValue: {
-        fontSize: typography.fontSize.xl, // Slightly smaller
+        fontSize: typography.fontSize.xl,
         fontWeight: typography.fontWeight.bold,
         color: colors.text.primary,
         marginTop: spacing.xs,
@@ -584,7 +560,7 @@ const styles = StyleSheet.create({
         marginTop: spacing.xs,
     },
     statLabel: {
-        fontSize: 10, // Smaller font for labels
+        fontSize: 10,
         color: colors.text.tertiary,
         textAlign: 'center',
         marginTop: spacing.xs,
@@ -603,8 +579,11 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#2D3748',
+        color: colors.white, // Changed to white for better contrast on gradient
         marginBottom: 12,
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -614,7 +593,7 @@ const styles = StyleSheet.create({
     },
     filterContainer: {
         flexDirection: 'row',
-        backgroundColor: '#EDF2F7',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glassy
         borderRadius: 8,
         padding: 2,
     },
@@ -625,16 +604,11 @@ const styles = StyleSheet.create({
     },
     filterBtnActive: {
         backgroundColor: '#FFFFFF',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-        elevation: 1,
     },
     filterBtnText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#718096',
+        color: 'rgba(255, 255, 255, 0.8)',
     },
     filterBtnTextActive: {
         color: '#3182CE',
@@ -646,21 +620,18 @@ const styles = StyleSheet.create({
     dateItem: {
         width: 50,
         height: 60,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 8,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
     },
     dateItemActive: {
         backgroundColor: '#3182CE',
-        borderColor: '#3182CE',
     },
     dateDay: {
         fontSize: 12,
-        color: '#718096',
+        color: '#4A5568',
         marginBottom: 4,
     },
     dateNum: {
@@ -679,74 +650,18 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 6,
     },
-    reviewCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 16,
-        marginRight: 12,
-        width: 200,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    reviewClientName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#2D3748',
-        marginBottom: 8,
-    },
-    reviewGoalBadge: {
-        backgroundColor: '#EBF8FF',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-        alignSelf: 'flex-start',
-        marginBottom: 8,
-    },
-    reviewGoalText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#3182CE',
-    },
-    reviewWeek: {
-        fontSize: 13,
-        color: '#718096',
-        marginBottom: 12,
-    },
-    reviewButton: {
-        backgroundColor: '#3182CE',
-        borderRadius: 8,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    reviewButtonText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        marginRight: 4,
-    },
     sessionCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
+        paddingVertical: 12,
         flexDirection: 'row',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
     },
     sessionTime: {
         flexDirection: 'row',
         alignItems: 'center',
         marginRight: 16,
+        minWidth: 80,
     },
     sessionTimeText: {
         fontSize: 14,
@@ -767,26 +682,21 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#718096',
     },
-    sessionButton: {
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
+    sessionStatus: {
+        fontSize: 12,
+        color: '#718096',
+        marginTop: 2,
+        textTransform: 'capitalize',
+        fontWeight: '500',
     },
-    managementCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+    sessionButton: {
+        padding: 8,
     },
     managementOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 16,
     },
     managementText: {
         fontSize: 15,
@@ -798,27 +708,17 @@ const styles = StyleSheet.create({
     managementDivider: {
         height: 1,
         backgroundColor: '#E2E8F0',
-    },
-    analyticsCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        marginLeft: 52, // Indent to align with text
     },
     chartPlaceholder: {
         height: 120,
-        backgroundColor: '#EDF2F7',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        borderStyle: 'dashed',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderStyle: 'dashed',
+        borderRadius: 8,
     },
     chartPlaceholderText: {
         fontSize: 16,
@@ -827,6 +727,7 @@ const styles = StyleSheet.create({
     metricsRow: {
         flexDirection: 'row',
         justifyContent: 'space-around',
+        marginTop: 10,
     },
     metricItem: {
         alignItems: 'center',
@@ -842,22 +743,13 @@ const styles = StyleSheet.create({
         color: '#718096',
         textAlign: 'center',
     },
-    notificationsCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
     notificationItem: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#E2E8F0',
+        paddingHorizontal: 16,
     },
     notificationIcon: {
         width: 36,
@@ -875,13 +767,6 @@ const styles = StyleSheet.create({
     },
     bottomSpacer: {
         height: 20,
-    },
-    sessionStatus: {
-        fontSize: 12,
-        color: '#718096',
-        marginTop: 2,
-        textTransform: 'capitalize',
-        fontWeight: '500',
     },
     emptyState: {
         padding: 20,

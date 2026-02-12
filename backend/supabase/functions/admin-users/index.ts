@@ -60,89 +60,135 @@ serve(async (req) => {
 
         switch (action) {
             case 'fetch':
-            case undefined: // Default to fetch if no action
-                // 1. Fetch Active Profiles (Join with Profiles again to get assigned trainer name if needed, or just IDs)
-                // We need to fetch 'assigned_trainer_id' and ideally the trainer's name. 
-                // Since self-join is complex in one go, let's fetch IDs first or mapping.
-                // Assuming 'assigned_trainer_id' exists in profiles.
-                const { data: activeUsers, error: profilesError } = await supabaseClient
-                    .from('profiles')
-                    .select('user_id, full_name, role, phone_number, created_at, gym_code, address, assigned_trainer_id, app_users(email)')
-                    .eq('gym_code', gymCode)
-                    .neq('role', 'admin')
-                    .order('created_at', { ascending: false });
-
-                if (profilesError) throw profilesError;
-
-                // 2. Fetch Pending Invitations
-                const { data: pendingUsers, error: invitesError } = await supabaseClient
-                    .from('invitations')
-                    .select('id, name, role, phone, email, plan_id, pt_plan_id, created_at, status, address, assigned_trainer_id')
-                    .eq('gym_code', gymCode)
-                    .eq('status', 'pending')
-                    .order('created_at', { ascending: false });
-
-                if (invitesError) throw invitesError;
-
-                // 3. Fetch Active Subscriptions for Active Users
-                const activeUserIds = activeUsers.map(u => u.user_id);
-                let userPlans: any = {};
-
-                if (activeUserIds.length > 0) {
-                    const { data: subs } = await supabaseClient
-                        .from('subscriptions')
-                        .select('user_id, plan_id, pt_plan_id')
-                        .in('user_id', activeUserIds)
-                        .eq('status', 'active'); // Or just take the latest?
-
-                    if (subs) {
-                        subs.forEach(s => {
-                            userPlans[s.user_id] = { plan_id: s.plan_id, pt_plan_id: s.pt_plan_id };
-                        });
+            case undefined:
+                // Unified Fetch from branch_users
+                let branchIds = [];
+                if (branchId) {
+                    branchIds = [branchId];
+                } else {
+                    if (branchUser.role === 'owner') {
+                        const { data: branches } = await supabaseClient
+                            .from('branches')
+                            .select('id')
+                            .eq('gym_code', gymCode);
+                        branchIds = branches?.map(b => b.id) || [];
+                    } else {
+                        branchIds = [branchUser.branch_id];
                     }
                 }
 
-                // 4. Merge & Map
-                const mappedActive = activeUsers.map(u => ({
-                    id: u.user_id,
-                    full_name: u.full_name,
-                    phone_number: u.phone_number,
-                    email: u.app_users?.email,
-                    role: u.role,
-                    status: 'Active',
-                    created_at: u.created_at,
-                    gym_code: u.gym_code,
-                    plan_id: userPlans[u.user_id]?.plan_id || null,
-                    pt_plan_id: userPlans[u.user_id]?.pt_plan_id || null,
-                    address: u.address,
-                    assigned_trainer_id: u.assigned_trainer_id,
-                    // We can map trainer name here efficiently if we had a map of all trainers.
-                    // Let's create a trainer map from activeUsers AND pendingUsers (Invited Trainers)
-                    assigned_trainer_name: activeUsers.find(t => t.user_id === u.assigned_trainer_id)?.full_name
-                        || pendingUsers.find(t => t.id === u.assigned_trainer_id)?.name
-                }));
+                // 1. Fetch Branch Users (Active)
+                const { data: bUsers, error: bError } = await supabaseClient
+                    .from('branch_users')
+                    .select('user_id, role, status, created_at')
+                    .in('branch_id', branchIds)
+                    .order('created_at', { ascending: false });
 
-                const mappedPending = pendingUsers.map(u => ({
-                    id: u.id,
-                    full_name: u.name,
-                    phone_number: u.phone,
-                    email: u.email,
-                    role: u.role,
+                if (bError) throw bError;
+
+                // 1b. Fetch Pending Invitations
+                const { data: invitations, error: iError } = await supabaseClient
+                    .from('invitations')
+                    .select('*')
+                    .eq('gym_code', gymCode)
+                    .eq('status', 'pending');
+
+                if (iError) throw iError;
+
+                const activeUsers = bUsers || [];
+                const pendingUsers = invitations || [];
+
+                if (activeUsers.length === 0 && pendingUsers.length === 0) {
+                    result = [];
+                    break;
+                }
+
+                const userIds = activeUsers.map(u => u.user_id);
+
+                // 2. Fetch Profiles for Active Users
+                let profiles = [];
+                let subscriptions = [];
+
+                if (userIds.length > 0) {
+                    const { data: pData, error: pError } = await supabaseClient
+                        .from('profiles')
+                        .select('user_id, full_name, phone_number, address, assigned_trainer_id')
+                        .in('user_id', userIds);
+
+                    if (pError) throw pError;
+                    profiles = pData || [];
+
+                    const { data: sData, error: sError } = await supabaseClient
+                        .from('subscriptions')
+                        .select('user_id, plan_id, pt_plan_id, status')
+                        .in('user_id', userIds);
+
+                    if (sError) throw sError;
+                    subscriptions = sData || [];
+                }
+
+                // Helper to get latest active sub
+                const getSub = (uid) => {
+                    const userSubs = subscriptions?.filter(s => s.user_id === uid) || [];
+                    if (userSubs.length === 0) return { plan_id: null, pt_plan_id: null };
+
+                    // Prioritize active, else take first
+                    const active = userSubs.find(s => s.status === 'active') || userSubs[0];
+                    return active || { plan_id: null, pt_plan_id: null };
+                };
+
+                // 4. Merge Data
+                const mappedActive = activeUsers.map(u => {
+                    const profile = profiles?.find(p => p.user_id === u.user_id) || {};
+                    const subInfo = getSub(u.user_id);
+
+                    return {
+                        id: u.user_id,
+                        full_name: profile.full_name || 'Unknown',
+                        phone_number: profile.phone_number || 'No Phone',
+                        email: null,
+                        role: u.role,
+                        status: u.status === 'active' ? 'Active' : 'Pending',
+                        created_at: u.created_at,
+                        gym_code: gymCode,
+                        plan_id: subInfo.plan_id,
+                        pt_plan_id: subInfo.pt_plan_id,
+                        address: profile.address,
+                        assigned_trainer_id: profile.assigned_trainer_id,
+                        assigned_trainer_name: null
+                    };
+                });
+
+                const mappedPending = pendingUsers.map(inv => ({
+                    id: inv.id, // Invitation ID (not User UUID yet)
+                    full_name: inv.name,
+                    phone_number: inv.phone,
+                    email: inv.email,
+                    role: inv.role,
                     status: 'Pending',
-                    created_at: u.created_at,
-                    gym_code: gymCode,
-                    plan_id: u.plan_id,
-                    pt_plan_id: u.pt_plan_id,
-                    address: u.address,
-                    assigned_trainer_id: u.assigned_trainer_id,
-                    assigned_trainer_name: activeUsers.find(t => t.user_id === u.assigned_trainer_id)?.full_name
-                        || pendingUsers.find(t => t.id === u.assigned_trainer_id)?.name
+                    created_at: inv.created_at,
+                    gym_code: inv.gym_code,
+                    plan_id: inv.plan_id,
+                    pt_plan_id: inv.pt_plan_id,
+                    address: inv.address,
+                    assigned_trainer_id: inv.assigned_trainer_id,
+                    assigned_trainer_name: null
                 }));
 
-                // Combine and sort by newest first
-                result = [...mappedPending, ...mappedActive].sort((a, b) =>
-                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                );
+                result = [...mappedActive, ...mappedPending].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+                // Populate assigned_trainer_name (now that we have all profiles logic)
+                const allTrainers = result.filter(u => u.role === 'trainer' || u.role === 'Trainer');
+                result.forEach(u => {
+                    if (u.assigned_trainer_id) {
+                        // Look in both active and pending list just in case, though usually trainers are active
+                        // Note: ID for pending users is int, ID for active is UUID. 
+                        // Assigned Admin ID/User ID will overlap.
+                        // Ideally assigned_trainer_id refers to a User UUID.
+                        const trainer = allTrainers.find(t => t.id === u.assigned_trainer_id);
+                        if (trainer) u.assigned_trainer_name = trainer.full_name;
+                    }
+                });
                 break;
 
             case 'bulk_create':
@@ -158,7 +204,7 @@ serve(async (req) => {
                     phone: u.phone,
                     email: u.email,
                     address: u.address || null,
-                    plan_id: null,
+                    plan_id: u.plan_id || null,
                     status: 'pending'
                 }));
 
@@ -169,91 +215,233 @@ serve(async (req) => {
                 break;
 
             case 'create':
-                // Creating a user "Directly" means creating an Invitation
-                if (!payload.name || (!payload.phone && !payload.email)) {
-                    throw new Error("Name and either Phone or Email are required");
+                // Create User: Auth -> Profile -> BranchUser -> Subscription
+                if (!payload.name || !payload.phone) {
+                    throw new Error("Name and Phone are required");
                 }
 
-                // Handling Branch Admin Creation specifically to ensure branch_users entry + permissions
-                if (payload.role === 'branch_admin') {
-                    // Check if user exists as strict profile first might be tricky if they are new. 
-                    // Usually we invite them via auth, but here we are creating a profile/invitation.
-                    // If we want them to login, they need an auth user. 
-                    // Simple flow: Create Invitation -> They accept -> Auth User created -> trigger creates profile -> we update role?
-                    // OR: "Create User" here implies creating a "Ghost" user or Pre-created user? 
-                    // Looking at 'bulk_create', it creates INVITATIONS.
-                    // So specific Branch Admin creation should probably also be an Invitation if they don't exist?
-                    // But for Admin, we might want to attach permissions NOW. Invitation table needs 'permissions' col?
-                    // Or just store it in metadata?
-                    // Let's assume we create an INVITATION with role='branch_admin'. 
-                    // When they accept, they become branch_admin. 
-                    // WE NEED TO STORE PERMISSIONS IN INVITATION or somewhere. 
-                    // Let's add 'permissions' to invitation creation for now if standard flow.
-                    // BUT, if we want to assign permissions to EXISTING user, we do it via branch_users.
+                const rawInput = payload.phone;
+                const phoneNoPlus = rawInput.replace(/^\+/, '');
+                const digitsOnly = phoneNoPlus.replace(/\D/g, ''); // strip non-digits
 
-                    // For now, let's treat "Create" as "Create Invitation" as per existing code.
-                    // I will add 'permissions' to the INSERT.
-                    // IMPORTANT: 'invitations' table does not have 'permissions' column yet.
-                    // I should add it to migration or use a metadata field?
-                    // 'invitations' has 'role'. 
-                    // Let's add 'permissions' to 'invitations' table too in a migration update or separate one?
-                    // Better: use 'create_branch_admin' action if we want to be explicit, but 'create' is generic.
-                    // I'll stick to 'create' and add permissions to payload.
-                    // I need to update INVITATION schema to store permissions? Or just handle it post-signup?
-                    // If they are pending, we can't save to branch_users yet as there is no user_id?
-                    // Wait, `branch_users` links `user_id` (auth id).
-                    // So we need `permissions` in `invitations` table to copy over on signup.
-                    // I will assume for this task we might need to modify `invitations` table too. 
-                    // OR just stick to updating permissions for ACTIVE users.
-                    // Let's try to update `invitations` logic to accept `permissions` JSONB.
-                    // I will need to update the migration to add permissions to invitations too.
+                // Default to India (+91) if 10 digits
+                const e164Phone = digitsOnly.length === 10
+                    ? '+91' + digitsOnly
+                    : '+' + digitsOnly;
+
+                // 1. Create Auth User
+                const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
+                    phone: e164Phone,
+                    email: payload.email,
+                    phone_confirm: true,
+                    user_metadata: { role: payload.role?.toLowerCase() || 'member' }
+                });
+
+                let newUserId = newUser?.user?.id;
+
+                if (createError) {
+                    console.log("CreateUser Failed:", createError.message);
+                    const msg = createError.message.toLowerCase();
+
+                    // If user exists, try to find them
+                    if (msg.includes('already registered') || msg.includes('exists') || msg.includes('unique constraint')) {
+                        console.log("User likely exists. Searching for ID...");
+
+                        // 0. Try finding in 'app_users' (Most reliable sync table)
+                        let matchQuery = `phone.eq.${e164Phone}`;
+                        if (payload.email) matchQuery += `,email.eq.${payload.email}`;
+
+                        const { data: appUserMatch } = await supabaseClient
+                            .from('app_users')
+                            .select('id')
+                            .or(matchQuery)
+                            .maybeSingle();
+
+                        if (appUserMatch) {
+                            newUserId = appUserMatch.id;
+                            console.log("Found User ID via app_users:", newUserId);
+                        }
+
+                        // 1. Try finding in 'profiles'
+                        if (!newUserId) {
+                            const { data: profileUser } = await supabaseClient
+                                .from('profiles')
+                                .select('user_id')
+                                .or(`phone_number.eq.${e164Phone},phone_number.eq.${payload.phone}`)
+                                .maybeSingle();
+
+                            if (profileUser) {
+                                newUserId = profileUser.user_id;
+                                console.log("Found User ID via Profiles:", newUserId);
+                            }
+                        }
+
+                        // 2. Try 'owners'
+                        if (!newUserId) {
+                            const { data: ownerUser } = await supabaseClient
+                                .from('owners')
+                                .select('id')
+                                .eq('phone', e164Phone)
+                                .maybeSingle();
+
+                            if (ownerUser) {
+                                newUserId = ownerUser.id;
+                                console.log("Found User ID via Owners (e164):", newUserId);
+                            } else {
+                                // Try raw
+                                const { data: ownerUserRaw } = await supabaseClient
+                                    .from('owners')
+                                    .select('id')
+                                    .eq('phone', digitsOnly) // try raw digits
+                                    .maybeSingle();
+
+                                if (ownerUserRaw) {
+                                    newUserId = ownerUserRaw.id;
+                                    console.log("Found User ID via Owners (raw):", newUserId);
+                                }
+                            }
+                        }
+
+                        // 3. Fallback: Search Auth Users (with Pagination & Robust Matching)
+                        if (!newUserId) {
+                            console.log("Fallback: Searching Auth List...");
+
+                            let page = 1;
+                            const PER_PAGE_LIMIT = 1000;
+                            let hasMore = true;
+                            let totalScanned = 0;
+
+                            while (hasMore && !newUserId) {
+                                const { data: { users: searchedUsers }, error: listError } = await supabaseClient.auth.admin.listUsers({
+                                    page: page,
+                                    perPage: PER_PAGE_LIMIT
+                                });
+
+                                if (listError) {
+                                    console.error("ListUsers Error:", listError);
+                                    hasMore = false;
+                                    break;
+                                }
+
+                                if (!searchedUsers || searchedUsers.length === 0) {
+                                    hasMore = false;
+                                    break;
+                                }
+
+                                totalScanned += searchedUsers.length;
+
+                                // Robust Matching
+                                const found = searchedUsers.find(u => {
+                                    if (payload.email && u.email && u.email.toLowerCase() === payload.email.toLowerCase()) return true;
+
+                                    // Normalize phones: Strip all non-digits
+                                    const uPhoneClean = u.phone ? u.phone.replace(/\D/g, '') : '';
+                                    const inputPhoneClean = digitsOnly; // e.g. 919893224938
+
+                                    // Check for exact match of digits
+                                    if (uPhoneClean === inputPhoneClean) return true;
+
+                                    // Check if one contains the other (risky but handles missing country code)
+                                    // Only do this if lengths are reasonable (e.g. > 9 digits) to avoid partial matches on short numbers
+                                    if (uPhoneClean.length > 9 && inputPhoneClean.length > 9) {
+                                        if (uPhoneClean.includes(inputPhoneClean) || inputPhoneClean.includes(uPhoneClean)) return true;
+                                    }
+
+                                    return false;
+                                });
+
+                                if (found) {
+                                    newUserId = found.id;
+                                    console.log(`Found User ID via Auth List (Page ${page}, Scanned ${totalScanned}). (ID: ${newUserId})`);
+                                    hasMore = false; // Stop searching
+                                } else {
+                                    // Check if we should continue
+                                    if (searchedUsers.length < PER_PAGE_LIMIT) {
+                                        hasMore = false;
+                                    } else {
+                                        page++;
+                                    }
+                                }
+                            }
+
+                            if (!newUserId) {
+                                throw new Error(`User exists (conflict) but not found after scanning ${totalScanned} auth users. (Input: ${e164Phone})`);
+                            }
+                        }
+                    } else {
+                        throw createError;
+                    }
                 }
 
-                // Check if already invited
+                if (!newUserId) throw new Error("Failed to generate User ID");
 
-                const { data: existingInvite } = await supabaseClient
-                    .from('invitations')
-                    .select('id')
-                    .eq('gym_code', gymCode)
-                    .or(`phone.eq.${payload.phone},email.eq.${payload.email}`)
-                    .maybeSingle();
+                // 2. Ensure public.app_users record exists (Critical for orphaned users)
+                // This satisfies the profiles_user_id_fkey constraint
+                const { error: appUserErr } = await supabaseClient
+                    .from('app_users')
+                    .upsert({
+                        id: newUserId,
+                        email: payload.email || null,
+                        phone: e164Phone
+                    });
 
-                if (existingInvite) {
-                    // Update existing invitation instead of erroring
-                    ({ data: result, error } = await supabaseClient
-                        .from('invitations')
-                        .update({
-                            role: payload.role?.toLowerCase() || 'member',
-                            name: payload.name,
-                            plan_id: payload.plan_id || null,
-                            pt_plan_id: payload.pt_plan_id || null,
-                            address: payload.address,
-                            permissions: payload.permissions || [],
-                            assigned_trainer_id: payload.assigned_trainer_id || null
-                        })
-                        .eq('id', existingInvite.id)
-                        .select()
-                        .maybeSingle());
-                } else {
-                    // Create New Invitation
-                    ({ data: result, error } = await supabaseClient
-                        .from('invitations')
+                if (appUserErr) {
+                    console.error("Failed to sync app_users:", appUserErr);
+                    // We continue, but profile insert might fail if this failed.
+                }
+
+                // 3. Create Profile (if not exists)
+                const { error: profileErr } = await supabaseClient
+                    .from('profiles')
+                    .upsert({
+                        user_id: newUserId,
+                        full_name: payload.name,
+                        phone_number: e164Phone, // Use normalized phone
+                        role: payload.role?.toLowerCase() || 'member',
+                        gym_code: gymCode,
+                        address: payload.address,
+                        assigned_trainer_id: payload.assigned_trainer_id
+                    });
+
+                if (profileErr) throw profileErr;
+
+                // 3. Add to Branch (BranchUser)
+                let targetBranchId = branchId || branchUser.branch_id;
+
+                if (!targetBranchId && branchUser.role === 'owner') {
+                    const { data: b } = await supabaseClient.from('branches').select('id').eq('gym_code', gymCode).limit(1).single();
+                    targetBranchId = b?.id;
+                }
+
+                if (!targetBranchId) throw new Error("Could not determine target branch for user.");
+
+                const { error: buError } = await supabaseClient
+                    .from('branch_users')
+                    .insert({
+                        branch_id: targetBranchId,
+                        user_id: newUserId,
+                        role: payload.role?.toLowerCase() || 'member',
+                        status: 'active',
+                        permissions: payload.permissions || []
+                    });
+
+                if (buError) {
+                    if (!buError.message.includes('duplicate')) throw buError;
+                }
+
+                // 4. Create Subscription
+                if (payload.plan_id || payload.pt_plan_id) {
+                    await supabaseClient
+                        .from('subscriptions')
                         .insert({
-                            gym_code: gymCode,
-                            role: payload.role?.toLowerCase() || 'member',
-                            name: payload.name,
-                            phone: payload.phone,
-                            email: payload.email,
+                            user_id: newUserId,
                             plan_id: payload.plan_id || null,
                             pt_plan_id: payload.pt_plan_id || null,
-                            status: 'pending',
-                            address: payload.address,
-                            permissions: payload.permissions || [],
-                            assigned_trainer_id: payload.assigned_trainer_id || null
-                        })
-                        .select()
-                        .maybeSingle());
+                            status: 'active'
+                        });
                 }
+
+                result = { success: true, userId: newUserId };
                 break;
 
             case 'update':
@@ -282,7 +470,6 @@ serve(async (req) => {
                     result = inviteUpdate;
                     break;
                 }
-
                 // 2. If not invitation, Update Profile (Active User)
                 const profileUpdates: any = {};
                 if (payload.name) profileUpdates.full_name = payload.name;
@@ -360,14 +547,49 @@ serve(async (req) => {
 
             case 'delete':
                 if (!payload?.id) throw new Error("Missing user ID");
-                // Soft delete / Detach from Gym (set gym_code to null)
-                ({ data: result, error } = await supabaseClient
+
+                // 1. Try deleting Invitation (Pending User)
+                const { data: deletedInvite, error: delInviteError } = await supabaseClient
+                    .from('invitations')
+                    .delete()
+                    .eq('id', payload.id) // pending user ID is int
+                    .eq('gym_code', gymCode)
+                    .select()
+                    .maybeSingle();
+
+                if (delInviteError) throw delInviteError;
+
+                if (deletedInvite) {
+                    result = { success: true, deleted: 'invitation' };
+                    break;
+                }
+
+                // 2. If not invitation, Soft delete Active User (detach from Gym)
+                // Note: payload.id for active user is UUID string
+                const { data: deletedProfile, error: delProfileError } = await supabaseClient
                     .from('profiles')
                     .update({ gym_code: null })
                     .eq('user_id', payload.id)
                     .eq('gym_code', gymCode)
                     .select()
-                    .maybeSingle());
+                    .maybeSingle();
+
+                if (delProfileError) throw delProfileError;
+
+                // Also remove from branch_users to be thorough
+                await supabaseClient
+                    .from('branch_users')
+                    .delete()
+                    .eq('user_id', payload.id)
+                    .in('branch_id', (
+                        await supabaseClient
+                            .from('branches')
+                            .select('id')
+                            .eq('gym_code', gymCode)
+                    ).data?.map(b => b.id) || []
+                    );
+
+                result = deletedProfile;
                 break;
 
             default:

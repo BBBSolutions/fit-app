@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { colors, shadows, borderRadius, spacing } from '../theme/theme';
 
 /**
@@ -24,6 +25,9 @@ const GradientCard = ({
     gradientBorder = true,
     borderColors = colors.trainerGradient,
     borderWidth = 2,
+    fullHeight = false,
+    useGradient = false,
+    gradientColors = colors.primaryGradient,
     onPress,
     variant = 'default',
     ...props
@@ -41,11 +45,65 @@ const GradientCard = ({
         }
     };
 
+    const renderContent = () => {
+        const commonStyles = [
+            styles.cardContent,
+            fullHeight && { flex: 1 }, // Apply flex: 1 if fullHeight
+            { margin: borderWidth },
+            contentStyle,
+        ];
+
+        if (useGradient) {
+            return (
+                <LinearGradient
+                    colors={gradientColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={commonStyles}
+                >
+                    {children}
+                </LinearGradient>
+            );
+        }
+
+        const content = (
+            <View
+                style={[
+                    ...commonStyles,
+                    // Web-only glassmorphism if BlurView isn't used or allowed there easily
+                    (glassmorphic && Platform.OS === 'web') && styles.glassmorphicWeb,
+                    !glassmorphic && { backgroundColor: colors.white }, // Solid background if not glass
+                ]}
+            >
+                {children}
+            </View>
+        );
+
+        if (glassmorphic && Platform.OS !== 'web') {
+            return (
+                <BlurView
+                    intensity={80}
+                    tint="light"
+                    style={[
+                        styles.blurContainer,
+                        fullHeight && { flex: 1 }, // Apply flex: 1 if fullHeight
+                        { margin: borderWidth, borderRadius: borderRadius.lg - 2 }
+                    ]}
+                >
+                    {children}
+                </BlurView>
+            );
+        }
+
+        return content;
+    };
+
+
     // If gradient border is enabled, use LinearGradient wrapper
     if (gradientBorder) {
         return (
             <CardContainer
-                style={[styles.cardWrapper, style]}
+                style={[styles.cardWrapper, fullHeight && { flex: 1 }, style]}
                 onPress={onPress}
                 activeOpacity={onPress ? 0.7 : 1}
                 {...props}
@@ -54,18 +112,13 @@ const GradientCard = ({
                     colors={borderColors}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={[styles.gradientBorder, getVariantStyles()]}
+                    style={[
+                        styles.gradientBorder,
+                        fullHeight && { flex: 1 }, // Apply flex: 1 if fullHeight
+                        getVariantStyles()
+                    ]}
                 >
-                    <View
-                        style={[
-                            styles.cardContent,
-                            glassmorphic && styles.glassmorphic,
-                            { margin: borderWidth },
-                            contentStyle,
-                        ]}
-                    >
-                        {children}
-                    </View>
+                    {renderContent()}
                 </LinearGradient>
             </CardContainer>
         );
@@ -76,7 +129,7 @@ const GradientCard = ({
         <CardContainer
             style={[
                 styles.card,
-                glassmorphic && styles.glassmorphic,
+                glassmorphic && Platform.OS === 'web' && styles.glassmorphicWeb,
                 getVariantStyles(),
                 style,
             ]}
@@ -84,7 +137,13 @@ const GradientCard = ({
             activeOpacity={onPress ? 0.7 : 1}
             {...props}
         >
-            {children}
+            {glassmorphic && Platform.OS !== 'web' ? (
+                <BlurView intensity={80} tint="light" style={styles.blurContainer}>
+                    <View style={{ padding: spacing.lg }}>{children}</View>
+                </BlurView>
+            ) : (
+                renderContent()
+            )}
         </CardContainer>
     );
 };
@@ -99,17 +158,23 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     cardContent: {
-        backgroundColor: colors.white,
         borderRadius: borderRadius.lg - 2,
         padding: spacing.lg,
+        overflow: 'hidden',
+    },
+    blurContainer: {
+        borderRadius: borderRadius.lg - 2,
+        padding: spacing.lg,
+        overflow: 'hidden',
     },
     card: {
         backgroundColor: colors.white,
         borderRadius: borderRadius.lg,
         padding: spacing.lg,
+        overflow: 'hidden',
     },
-    glassmorphic: {
-        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    glassmorphicWeb: {
+        backgroundColor: 'rgba(255, 255, 255, 0.7)',
         backdropFilter: 'blur(10px)',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.3)',

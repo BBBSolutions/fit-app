@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { adminApi } from '../../services/adminApi';
 
 const AdminContentManagerScreen = ({ navigation, route }) => {
@@ -17,9 +18,13 @@ const AdminContentManagerScreen = ({ navigation, route }) => {
 
     const tabs = ['All Content', 'Pages', 'Articles', 'Announcements', 'Banners', 'Legal', 'Workout Guides'];
 
-    useEffect(() => {
-        fetchContent();
-    }, []);
+    useFocusEffect(
+        React.useCallback(() => {
+            if (branchId) {
+                fetchContent();
+            }
+        }, [branchId])
+    );
 
     const fetchContent = async () => {
         setIsLoading(true);

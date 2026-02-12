@@ -4,14 +4,20 @@ import {
     Text,
     StyleSheet,
     ScrollView,
-    TextInput,
     TouchableOpacity,
-    SafeAreaView,
     Alert,
-    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+
+// UI Components
+import ScreenWrapper from '../../components/ScreenWrapper';
+import GradientCard from '../../components/GradientCard';
+import StandardInput from '../../components/StandardInput';
+import AnimatedButton from '../../components/AnimatedButton';
+import { colors, spacing, typography, borderRadius } from '../../theme/theme';
 
 const TrainerOnboardingSurveyScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(false);
@@ -30,8 +36,6 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
         clientType: '',
         maxClients: '',
         bio: '',
-
-
     });
 
     const [showDropdown, setShowDropdown] = useState({
@@ -115,7 +119,13 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
     };
 
     const toggleDropdown = (field) => {
-        setShowDropdown({ ...showDropdown, [field]: !showDropdown[field] });
+        // Close others when opening one
+        const newState = { ...showDropdown };
+        Object.keys(newState).forEach(k => {
+            if (k !== field) newState[k] = false;
+        });
+        newState[field] = !showDropdown[field];
+        setShowDropdown(newState);
     };
 
     const selectDropdownOption = (field, value) => {
@@ -124,7 +134,7 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
     };
 
     const toggleSecondarySkill = (skill) => {
-        const currentSkills = formData.secondarySkills;
+        const currentSkills = formData.secondarySkills || [];
         if (currentSkills.includes(skill)) {
             updateField('secondarySkills', currentSkills.filter((s) => s !== skill));
         } else {
@@ -149,521 +159,469 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
             const { api } = require('../../services/api');
             await api.updateProfile(profileData);
             console.log('Profile saved successfully');
-            setLoading(false);
+
             // Navigate directly for web compatibility
             navigation.replace('TrainerMainApp');
         } catch (error) {
             console.error('Failed to save trainer profile:', error);
-            setLoading(false);
             Alert.alert('Error', 'Failed to save profile. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
-    return (
-        <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    const Dropdown = ({ field, placeholder, options }) => (
+        <View style={styles.dropdownContainer}>
+            <TouchableOpacity
+                style={styles.dropdownButton}
+                onPress={() => toggleDropdown(field)}
+            >
+                <Text style={[styles.dropdownButtonText, !formData[field] && styles.placeholderText]}>
+                    {formData[field] || placeholder}
+                </Text>
+                <Ionicons name={showDropdown[field] ? "chevron-up" : "chevron-down"} size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
 
-                {/* 1. Header */}
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>Trainer Onboarding</Text>
-                    <Text style={styles.headerSubtitle}>Tell us about yourself</Text>
-                </View>
-
-                {/* 2. Basic Details */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="person-outline" size={24} color="#3182CE" />
-                        <Text style={styles.cardTitle}>Basic Details</Text>
-                    </View>
-
-                    <Text style={styles.label}>Full Name *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="e.g., John Smith"
-                        value={formData.fullName}
-                        onChangeText={(text) => updateField('fullName', text)}
-                    />
-
-                    <View style={styles.inputRow}>
-                        <View style={styles.inputHalf}>
-                            <Text style={styles.label}>Age</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="e.g., 30"
-                                keyboardType="numeric"
-                                value={formData.age}
-                                onChangeText={(text) => updateField('age', text)}
-                            />
-                        </View>
-                        <View style={styles.inputHalf}>
-                            <Text style={styles.label}>Gender</Text>
-                            <TouchableOpacity
-                                style={styles.dropdown}
-                                onPress={() => toggleDropdown('gender')}
-                            >
-                                <Text style={[styles.dropdownText, !formData.gender && styles.placeholder]}>
-                                    {formData.gender || 'Select'}
-                                </Text>
-                                <Ionicons name="chevron-down" size={20} color="#718096" />
-                            </TouchableOpacity>
-                            {showDropdown.gender && (
-                                <View style={styles.dropdownList}>
-                                    {genderOptions.map((option) => (
-                                        <TouchableOpacity
-                                            key={option}
-                                            style={styles.dropdownItem}
-                                            onPress={() => selectDropdownOption('gender', option)}
-                                        >
-                                            <Text style={styles.dropdownItemText}>{option}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
+            {showDropdown[field] && (
+                <View style={styles.dropdownList}>
+                    {options.map((option) => (
+                        <TouchableOpacity
+                            key={option}
+                            style={styles.dropdownItem}
+                            onPress={() => selectDropdownOption(field, option)}
+                        >
+                            <Text style={[
+                                styles.dropdownItemText,
+                                formData[field] === option && styles.dropdownItemTextSelected
+                            ]}>
+                                {option}
+                            </Text>
+                            {formData[field] === option && (
+                                <Ionicons name="checkmark" size={16} color={colors.primary} />
                             )}
-                        </View>
-                    </View>
-
-                    <Text style={styles.label}>Phone Number</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={formData.phoneNumber}
-                        placeholder="e.g., +1 234 567 8900"
-                        keyboardType="phone-pad"
-                        onChangeText={(text) => updateField('phoneNumber', text)}
-                    />
-
-                    <Text style={styles.label}>Email Address *</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="e.g., trainer@example.com"
-                        keyboardType="email-address"
-                        value={formData.email}
-                        onChangeText={(text) => updateField('email', text)}
-                    />
+                        </TouchableOpacity>
+                    ))}
                 </View>
+            )}
+        </View>
+    );
 
-                {/* 3. Professional Information */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="briefcase-outline" size={24} color="#3182CE" />
-                        <Text style={styles.cardTitle}>Professional Information</Text>
-                    </View>
-
-                    <Text style={styles.label}>Years of Experience</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => toggleDropdown('yearsOfExperience')}
-                    >
-                        <Text style={[styles.dropdownText, !formData.yearsOfExperience && styles.placeholder]}>
-                            {formData.yearsOfExperience || 'Select experience'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color="#718096" />
-                    </TouchableOpacity>
-                    {showDropdown.yearsOfExperience && (
-                        <View style={styles.dropdownList}>
-                            {experienceOptions.map((option) => (
-                                <TouchableOpacity
-                                    key={option}
-                                    style={styles.dropdownItem}
-                                    onPress={() => selectDropdownOption('yearsOfExperience', option)}
-                                >
-                                    <Text style={styles.dropdownItemText}>{option}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Primary Training Specialization *</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => toggleDropdown('primarySpecialization')}
-                    >
-                        <Text style={[styles.dropdownText, !formData.primarySpecialization && styles.placeholder]}>
-                            {formData.primarySpecialization || 'Select specialization'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color="#718096" />
-                    </TouchableOpacity>
-                    {showDropdown.primarySpecialization && (
-                        <View style={styles.dropdownList}>
-                            {specializationOptions.map((option) => (
-                                <TouchableOpacity
-                                    key={option}
-                                    style={styles.dropdownItem}
-                                    onPress={() => selectDropdownOption('primarySpecialization', option)}
-                                >
-                                    <Text style={styles.dropdownItemText}>{option}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Secondary Skills (optional)</Text>
-                    <View style={styles.multiSelectContainer}>
-                        {secondarySkillsOptions.map((skill) => (
-                            <TouchableOpacity
-                                key={skill}
-                                style={[
-                                    styles.multiSelectChip,
-                                    formData.secondarySkills.includes(skill) && styles.multiSelectChipActive,
-                                ]}
-                                onPress={() => toggleSecondarySkill(skill)}
-                            >
-                                <Text
-                                    style={[
-                                        styles.multiSelectChipText,
-                                        formData.secondarySkills.includes(skill) && styles.multiSelectChipTextActive,
-                                    ]}
-                                >
-                                    {skill}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
-
-                {/* 4. Certifications (Optional) */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="ribbon-outline" size={24} color="#3182CE" />
-                        <Text style={styles.cardTitle}>Certifications (Optional)</Text>
-                    </View>
-
-                    <Text style={styles.label}>Certification Type</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => toggleDropdown('certificationType')}
-                    >
-                        <Text style={[styles.dropdownText, !formData.certificationType && styles.placeholder]}>
-                            {formData.certificationType || 'Select certification'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color="#718096" />
-                    </TouchableOpacity>
-                    {showDropdown.certificationType && (
-                        <View style={styles.dropdownList}>
-                            {certificationOptions.map((option) => (
-                                <TouchableOpacity
-                                    key={option}
-                                    style={styles.dropdownItem}
-                                    onPress={() => selectDropdownOption('certificationType', option)}
-                                >
-                                    <Text style={styles.dropdownItemText}>{option}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Upload Certificate</Text>
-                    <TouchableOpacity style={styles.uploadBox}>
-                        <Ionicons name="cloud-upload-outline" size={32} color="#A0AEC0" />
-                        <Text style={styles.uploadText}>Tap to upload certificate</Text>
-                    </TouchableOpacity>
-
-                    <Text style={styles.label}>Additional Notes</Text>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        placeholder="e.g., Certificate ID, expiry date..."
-                        multiline
-                        numberOfLines={3}
-                        value={formData.certificationNotes}
-                        onChangeText={(text) => updateField('certificationNotes', text)}
-                    />
-                </View>
-
-                {/* 5. Coaching Preferences */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="settings-outline" size={24} color="#3182CE" />
-                        <Text style={styles.cardTitle}>Coaching Preferences</Text>
-                    </View>
-
-                    <Text style={styles.label}>Preferred Coaching Method</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => toggleDropdown('coachingMethod')}
-                    >
-                        <Text style={[styles.dropdownText, !formData.coachingMethod && styles.placeholder]}>
-                            {formData.coachingMethod || 'Select method'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color="#718096" />
-                    </TouchableOpacity>
-                    {showDropdown.coachingMethod && (
-                        <View style={styles.dropdownList}>
-                            {coachingMethodOptions.map((option) => (
-                                <TouchableOpacity
-                                    key={option}
-                                    style={styles.dropdownItem}
-                                    onPress={() => selectDropdownOption('coachingMethod', option)}
-                                >
-                                    <Text style={styles.dropdownItemText}>{option}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Preferred Client Type</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => toggleDropdown('clientType')}
-                    >
-                        <Text style={[styles.dropdownText, !formData.clientType && styles.placeholder]}>
-                            {formData.clientType || 'Select client type'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color="#718096" />
-                    </TouchableOpacity>
-                    {showDropdown.clientType && (
-                        <View style={styles.dropdownList}>
-                            {clientTypeOptions.map((option) => (
-                                <TouchableOpacity
-                                    key={option}
-                                    style={styles.dropdownItem}
-                                    onPress={() => selectDropdownOption('clientType', option)}
-                                >
-                                    <Text style={styles.dropdownItemText}>{option}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
-
-                    <Text style={styles.label}>Max Clients You Can Manage</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="e.g., 15"
-                        keyboardType="numeric"
-                        value={formData.maxClients}
-                        onChangeText={(text) => updateField('maxClients', text)}
-                    />
-                </View>
-
-                {/* 6. Bio/Introduction */}
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="document-text-outline" size={24} color="#3182CE" />
-                        <Text style={styles.cardTitle}>Bio/Introduction</Text>
-                    </View>
-
-                    <Text style={styles.label}>About You</Text>
-                    <TextInput
-                        style={[styles.input, styles.bioTextArea]}
-                        placeholder="Write a short introduction for your clients..."
-                        multiline
-                        numberOfLines={6}
-                        value={formData.bio}
-                        onChangeText={(text) => updateField('bio', text)}
-                    />
-                </View>
-
-                <View style={styles.bottomSpacer} />
-            </ScrollView>
-
-            {/* 7. Save & Continue */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity
-                    style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-                    onPress={handleSaveProfile}
-                    disabled={loading}
+    return (
+        <ScreenWrapper useGradient={true} style={styles.container}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            >
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.contentContainer}
+                    showsVerticalScrollIndicator={false}
                 >
-                    {loading ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                        <Text style={styles.saveButtonText}>Save Profile</Text>
-                    )}
-                </TouchableOpacity>
+                    {/* 1. Header */}
+                    <View style={styles.header}>
+                        <Text style={styles.headerTitle}>Trainer Onboarding</Text>
+                        <Text style={styles.headerSubtitle}>Tell us about yourself to verify your profile</Text>
+                    </View>
+
+                    {/* 2. Basic Details */}
+                    <GradientCard glassmorphic={true} style={styles.sectionCard}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#EBF8FF' }]}>
+                                <Ionicons name="person" size={20} color={colors.primary} />
+                            </View>
+                            <Text style={styles.cardTitle}>Basic Details</Text>
+                        </View>
+
+                        <StandardInput
+                            label="Full Name *"
+                            placeholder="e.g. John Smith"
+                            value={formData.fullName}
+                            onChangeText={(text) => updateField('fullName', text)}
+                            leftIcon={<Ionicons name="person-outline" size={20} color={colors.text.tertiary} />}
+                        />
+
+                        <View style={styles.row}>
+                            <View style={{ flex: 1, marginRight: spacing.sm }}>
+                                <StandardInput
+                                    label="Age"
+                                    placeholder="e.g. 30"
+                                    keyboardType="numeric"
+                                    value={formData.age}
+                                    onChangeText={(text) => updateField('age', text)}
+                                />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                                <Text style={styles.label}>Gender</Text>
+                                <Dropdown
+                                    field="gender"
+                                    placeholder="Select"
+                                    options={genderOptions}
+                                />
+                            </View>
+                        </View>
+
+                        <StandardInput
+                            label="Phone Number"
+                            placeholder="e.g. +1 234 567 8900"
+                            value={formData.phoneNumber}
+                            keyboardType="phone-pad"
+                            onChangeText={(text) => updateField('phoneNumber', text)}
+                            leftIcon={<Ionicons name="call-outline" size={20} color={colors.text.tertiary} />}
+                        />
+
+                        <StandardInput
+                            label="Email Address *"
+                            placeholder="e.g. trainer@example.com"
+                            value={formData.email}
+                            keyboardType="email-address"
+                            onChangeText={(text) => updateField('email', text)}
+                            leftIcon={<Ionicons name="mail-outline" size={20} color={colors.text.tertiary} />}
+                        />
+                    </GradientCard>
+
+                    {/* 3. Professional Information */}
+                    <GradientCard glassmorphic={true} style={styles.sectionCard}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#F0FFF4' }]}>
+                                <Ionicons name="briefcase" size={20} color={colors.success} />
+                            </View>
+                            <Text style={styles.cardTitle}>Professional Information</Text>
+                        </View>
+
+                        <Text style={styles.label}>Years of Experience</Text>
+                        <Dropdown
+                            field="yearsOfExperience"
+                            placeholder="Select experience"
+                            options={experienceOptions}
+                        />
+
+                        <Text style={[styles.label, { marginTop: spacing.md }]}>Primary Specialization *</Text>
+                        <Dropdown
+                            field="primarySpecialization"
+                            placeholder="Select specialization"
+                            options={specializationOptions}
+                        />
+
+                        <Text style={[styles.label, { marginTop: spacing.md }]}>Secondary Skills (optional)</Text>
+                        <View style={styles.multiSelectContainer}>
+                            {secondarySkillsOptions.map((skill) => (
+                                <TouchableOpacity
+                                    key={skill}
+                                    style={[
+                                        styles.multiSelectChip,
+                                        formData.secondarySkills?.includes(skill) && styles.multiSelectChipActive,
+                                    ]}
+                                    onPress={() => toggleSecondarySkill(skill)}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.multiSelectChipText,
+                                            formData.secondarySkills?.includes(skill) && styles.multiSelectChipTextActive,
+                                        ]}
+                                    >
+                                        {skill}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </GradientCard>
+
+                    {/* 4. Certifications */}
+                    <GradientCard glassmorphic={true} style={styles.sectionCard}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#FFF5F5' }]}>
+                                <Ionicons name="ribbon" size={20} color={colors.error} />
+                            </View>
+                            <Text style={styles.cardTitle}>Certifications (Optional)</Text>
+                        </View>
+
+                        <Text style={styles.label}>Certification Type</Text>
+                        <Dropdown
+                            field="certificationType"
+                            placeholder="Select certification"
+                            options={certificationOptions}
+                        />
+
+                        {/* Upload placeholder */}
+                        <TouchableOpacity style={styles.uploadBox}>
+                            <Ionicons name="cloud-upload-outline" size={32} color={colors.text.tertiary} />
+                            <Text style={styles.uploadText}>Tap to upload certificate</Text>
+                        </TouchableOpacity>
+
+                        <StandardInput
+                            label="Additional Notes"
+                            placeholder="e.g. Certificate ID, expiry date..."
+                            value={formData.certificationNotes}
+                            onChangeText={(text) => updateField('certificationNotes', text)}
+                            multiline
+                            numberOfLines={3}
+                            style={{ minHeight: 80, textAlignVertical: 'top' }}
+                        />
+                    </GradientCard>
+
+                    {/* 5. Coaching Preferences */}
+                    <GradientCard glassmorphic={true} style={styles.sectionCard}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#FAF5FF' }]}>
+                                <Ionicons name="settings" size={20} color={colors.secondary} />
+                            </View>
+                            <Text style={styles.cardTitle}>Coaching Preferences</Text>
+                        </View>
+
+                        <Text style={styles.label}>Preferred Coaching Method</Text>
+                        <Dropdown
+                            field="coachingMethod"
+                            placeholder="Select method"
+                            options={coachingMethodOptions}
+                        />
+
+                        <Text style={[styles.label, { marginTop: spacing.md }]}>Target Client Type</Text>
+                        <Dropdown
+                            field="clientType"
+                            placeholder="Select client type"
+                            options={clientTypeOptions}
+                        />
+
+                        <StandardInput
+                            label="Max Clients Capacity"
+                            placeholder="e.g. 15"
+                            value={formData.maxClients}
+                            keyboardType="numeric"
+                            onChangeText={(text) => updateField('maxClients', text)}
+                            containerStyle={{ marginTop: spacing.md }}
+                        />
+                    </GradientCard>
+
+                    {/* 6. Bio */}
+                    <GradientCard glassmorphic={true} style={styles.sectionCard}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#FFFFF0' }]}>
+                                <Ionicons name="document-text" size={20} color={colors.warning} />
+                            </View>
+                            <Text style={styles.cardTitle}>Bio / Introduction</Text>
+                        </View>
+
+                        <StandardInput
+                            placeholder="Write a short introduction for your clients..."
+                            value={formData.bio}
+                            onChangeText={(text) => updateField('bio', text)}
+                            multiline
+                            numberOfLines={6}
+                            style={{ minHeight: 120, textAlignVertical: 'top' }}
+                        />
+                    </GradientCard>
+
+                    <View style={styles.footerSpacer} />
+                </ScrollView>
+            </KeyboardAvoidingView>
+
+            {/* Sticky Save Button */}
+            <View style={styles.footer}>
+                <AnimatedButton
+                    title="Save Profile"
+                    onPress={handleSaveProfile}
+                    loading={loading}
+                    variant="primary"
+                    gradient={true}
+                />
             </View>
-        </SafeAreaView>
+        </ScreenWrapper>
     );
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#F5F7FA',
-    },
     container: {
         flex: 1,
     },
+    scrollView: {
+        flex: 1,
+    },
     contentContainer: {
-        padding: 20,
+        padding: spacing.lg,
         paddingBottom: 100,
     },
     header: {
-        marginBottom: 24,
+        marginBottom: spacing.xl,
+        marginTop: spacing.md,
     },
     headerTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#1A202C',
-        marginBottom: 8,
+        fontSize: typography.fontSize.xxxl,
+        fontWeight: typography.fontWeight.extrabold,
+        color: colors.white,
+        marginBottom: spacing.xs,
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
     },
     headerSubtitle: {
-        fontSize: 16,
-        color: '#718096',
+        fontSize: typography.fontSize.md,
+        color: 'rgba(255, 255, 255, 0.9)',
     },
-    card: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 3,
+    sectionCard: {
+        marginBottom: spacing.xl,
+        padding: spacing.lg,
     },
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: spacing.lg,
+    },
+    iconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: borderRadius.round,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: spacing.md,
     },
     cardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#2D3748',
-        marginLeft: 8,
+        fontSize: typography.fontSize.lg,
+        fontWeight: typography.fontWeight.bold,
+        color: colors.text.primary,
     },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#4A5568',
-        marginBottom: 8,
-        marginTop: 12,
-    },
-    input: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 10,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        fontSize: 15,
-        color: '#2D3748',
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    inputDisabled: {
-        backgroundColor: '#EDF2F7',
-        color: '#A0AEC0',
-    },
-    inputRow: {
+    row: {
         flexDirection: 'row',
         justifyContent: 'space-between',
     },
-    inputHalf: {
-        width: '48%',
+    label: {
+        fontSize: typography.fontSize.sm,
+        fontWeight: '600',
+        color: colors.text.secondary,
+        marginBottom: spacing.xs,
+        marginLeft: spacing.xs,
     },
-    dropdown: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 10,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+    dropdownContainer: {
+        zIndex: 10, // Helps with overlay if needed, though mostly handled by FlatList logic usually
+    },
+    dropdownButton: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: colors.input.background,
         borderWidth: 1,
-        borderColor: '#E2E8F0',
+        borderColor: colors.input.border,
+        borderRadius: borderRadius.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 14, // Match StandardInput height roughly
+    },
+    dropdownButtonText: {
+        fontSize: typography.fontSize.base,
+        color: colors.text.primary,
+    },
+    placeholderText: {
+        color: colors.text.tertiary,
+    },
+    dropdownList: {
+        backgroundColor: colors.white,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginTop: spacing.xs,
+        overflow: 'hidden',
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 3,
+            },
+            web: {
+                boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+            },
+        }),
+    },
+    dropdownItem: {
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.background.secondary,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    dropdownText: {
-        fontSize: 15,
-        color: '#2D3748',
-    },
-    placeholder: {
-        color: '#A0AEC0',
-    },
-    dropdownList: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        marginTop: 4,
-        maxHeight: 200,
-    },
-    dropdownItem: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E2E8F0',
-    },
     dropdownItemText: {
-        fontSize: 15,
-        color: '#2D3748',
+        fontSize: typography.fontSize.base,
+        color: colors.text.secondary,
+    },
+    dropdownItemTextSelected: {
+        color: colors.primary,
+        fontWeight: '600',
     },
     multiSelectContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        marginTop: 8,
+        marginTop: spacing.xs,
     },
     multiSelectChip: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        marginRight: 8,
-        marginBottom: 8,
+        backgroundColor: colors.background.secondary,
+        borderRadius: borderRadius.round,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        marginRight: spacing.sm,
+        marginBottom: spacing.sm,
         borderWidth: 1,
-        borderColor: '#E2E8F0',
+        borderColor: colors.border,
     },
     multiSelectChipActive: {
-        backgroundColor: '#3182CE',
-        borderColor: '#3182CE',
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     multiSelectChipText: {
-        fontSize: 14,
-        color: '#4A5568',
+        fontSize: typography.fontSize.sm,
+        color: colors.text.secondary,
     },
     multiSelectChipTextActive: {
-        color: '#FFFFFF',
+        color: colors.white,
+        fontWeight: '600',
     },
     uploadBox: {
-        backgroundColor: '#F7FAFC',
-        borderRadius: 12,
-        borderWidth: 2,
-        borderColor: '#E2E8F0',
+        backgroundColor: colors.background.secondary,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
         borderStyle: 'dashed',
-        paddingVertical: 40,
+        paddingVertical: spacing.xl,
         alignItems: 'center',
         justifyContent: 'center',
+        marginBottom: spacing.lg,
+        marginTop: spacing.xs,
     },
     uploadText: {
-        fontSize: 14,
-        color: '#A0AEC0',
-        marginTop: 8,
+        fontSize: typography.fontSize.sm,
+        color: colors.text.tertiary,
+        marginTop: spacing.xs,
     },
-    textArea: {
-        minHeight: 80,
-        textAlignVertical: 'top',
+    footerSpacer: {
+        height: 80,
     },
-    bioTextArea: {
-        minHeight: 120,
-        textAlignVertical: 'top',
-    },
-    bottomSpacer: {
-        height: 20,
-    },
-    bottomBar: {
+    footer: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        backgroundColor: colors.white,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
         borderTopWidth: 1,
-        borderTopColor: '#E2E8F0',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 5,
-    },
-    saveButton: {
-        backgroundColor: '#3182CE',
-        borderRadius: 12,
-        paddingVertical: 16,
-        alignItems: 'center',
-    },
-    saveButtonDisabled: {
-        backgroundColor: '#A0AEC0',
-    },
-    saveButtonText: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#FFFFFF',
+        borderTopColor: colors.border,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: -2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 5,
+            },
+            web: {
+                boxShadow: '0px -2px 5px rgba(0, 0, 0, 0.05)',
+            },
+        }),
     },
 });
 

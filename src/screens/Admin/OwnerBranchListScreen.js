@@ -1,13 +1,49 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { adminApi } from '../../services/adminApi';
 import { Ionicons } from '@expo/vector-icons';
 import theme from '../../theme/theme';
 
+const StatsOverview = ({ stats, loading }) => {
+    const statItems = [
+        { label: 'Total Members', value: stats.activeMembers || 0, icon: 'people', color: '#3182CE' },
+        { label: 'Active Trainers', value: stats.activeTrainers || 0, icon: 'fitness', color: '#38A169' },
+        { label: 'Total Leads', value: stats.leads || 0, icon: 'people-circle-outline', color: '#DD6B20' },
+        { label: 'Total Revenue', value: `₹${stats.monthlyRevenue || 0}`, icon: 'cash', color: '#805AD5' },
+    ];
+
+    return (
+        <View style={styles.statsContainer}>
+            <Text style={styles.statsTitle}>Overview (All Branches)</Text>
+            <View style={styles.statsGrid}>
+                {statItems.map((item, index) => (
+                    <View key={index} style={styles.statCard}>
+                        <View style={[styles.statIconContainer, { backgroundColor: `${item.color}20` }]}>
+                            <Ionicons name={item.icon} size={20} color={item.color} />
+                        </View>
+                        <View>
+                            {loading ? (
+                                <ActivityIndicator size="small" color={item.color} />
+                            ) : (
+                                <Text style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
+                            )}
+                            <Text style={styles.statLabel}>{item.label}</Text>
+                        </View>
+                    </View>
+                ))}
+            </View>
+        </View>
+    );
+};
+
 export default function OwnerBranchListScreen({ navigation }) {
     const [branches, setBranches] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState({});
+    const [statsLoading, setStatsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
     const [adminModalVisible, setAdminModalVisible] = useState(false);
     const [selectedBranchForAdmin, setSelectedBranchForAdmin] = useState(null);
     const [adminForm, setAdminForm] = useState({ name: '', email: '', phone: '' });
@@ -25,26 +61,39 @@ export default function OwnerBranchListScreen({ navigation }) {
         { key: 'manage_settings', label: 'Manage Settings' }
     ];
 
-    const fetchBranches = async () => {
+    const fetchData = async () => {
+        setLoading(true);
+        setStatsLoading(true);
         try {
-            setLoading(true);
-            const data = await adminApi.getBranches();
-            if (data?.branches) {
-                setBranches(data.branches);
+            const [branchData, statsData] = await Promise.all([
+                adminApi.getBranches(),
+                adminApi.getAggregatedStats()
+            ]);
+
+            if (branchData?.branches) {
+                setBranches(branchData.branches);
             }
+            setStats(statsData);
         } catch (error) {
-            console.error("Error fetching branches:", error);
-            Alert.alert("Error", "Failed to load branches.");
+            console.error("Error fetching data:", error);
+            Alert.alert("Error", "Failed to load data.");
         } finally {
             setLoading(false);
+            setStatsLoading(false);
+            setRefreshing(false);
         }
     };
 
     useFocusEffect(
         useCallback(() => {
-            fetchBranches();
+            fetchData();
         }, [])
     );
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchData();
+    }, []);
 
     const handleBranchSelect = (branch) => {
         navigation.navigate('AdminDashboard', {
@@ -72,7 +121,7 @@ export default function OwnerBranchListScreen({ navigation }) {
                             setLoading(true);
                             await adminApi.deleteBranch(branch.id);
                             Alert.alert("Success", "Branch deleted successfully.");
-                            fetchBranches();
+                            fetchData();
                         } catch (error) {
                             Alert.alert("Error", error.message || "Failed to delete branch");
                             setLoading(false);
@@ -167,14 +216,6 @@ export default function OwnerBranchListScreen({ navigation }) {
         </TouchableOpacity>
     );
 
-    if (loading) {
-        return (
-            <View style={styles.centered}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
-            </View>
-        );
-    }
-
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -193,10 +234,16 @@ export default function OwnerBranchListScreen({ navigation }) {
                 renderItem={renderItem}
                 keyExtractor={item => item.id}
                 contentContainerStyle={styles.listContent}
+                ListHeaderComponent={<StatsOverview stats={stats} loading={statsLoading} />}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+                }
                 ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No branches found.</Text>
-                    </View>
+                    !loading && (
+                        <View style={styles.emptyContainer}>
+                            <Text style={styles.emptyText}>No branches found.</Text>
+                        </View>
+                    )
                 }
             />
 
@@ -451,6 +498,52 @@ const styles = StyleSheet.create({
         color: '#A0AEC0',
         fontSize: 16,
     },
+    // Stats Styles
+    statsContainer: {
+        marginBottom: 20,
+    },
+    statsTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: 12,
+    },
+    statsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        gap: 12
+    },
+    statCard: {
+        width: '48%',
+        backgroundColor: '#FFF',
+        borderRadius: 12,
+        padding: 16,
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 2,
+        marginBottom: 8 // spacing row gap
+    },
+    statIconContainer: {
+        padding: 8,
+        borderRadius: 8,
+        marginBottom: 12,
+    },
+    statValue: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 4,
+    },
+    statLabel: {
+        fontSize: 12,
+        color: '#718096',
+        fontWeight: '500'
+    },
+    // Modal Styles (Unchanged mostly)
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',

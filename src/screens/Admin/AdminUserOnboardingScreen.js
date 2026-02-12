@@ -1,38 +1,76 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Image, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Modal,
+    Platform,
+    Dimensions,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView
+} from 'react-native';
 import { Dropdown } from 'react-native-element-dropdown';
 import * as DocumentPicker from 'expo-document-picker';
 import { adminApi } from '../../services/adminApi';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+// UI Components
+import ScreenWrapper from '../../components/ScreenWrapper';
+import GradientCard from '../../components/GradientCard';
+import StandardInput from '../../components/StandardInput';
+import AnimatedButton from '../../components/AnimatedButton';
+import { colors, spacing, typography, borderRadius, shadows } from '../../theme/theme';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 const normalizeRole = (role) => {
     if (!role) return 'Member';
-    return role.toLowerCase() === 'trainer' ? 'Trainer' : 'Member';
+    const lower = role.toLowerCase();
+    if (lower === 'trainer') return 'Trainer';
+    if (lower === 'owner') return 'Owner';
+    if (lower === 'branch_admin') return 'Admin';
+    return 'Member';
 };
 
-
 const AdminUserOnboardingScreen = ({ navigation, route }) => {
-    const { branchId } = route.params || {}; // Get branchId from navigation params
+    const { branchId } = route.params || {};
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState('All');
     const [modalVisible, setModalVisible] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
-    const [convertingLeadId, setConvertingLeadId] = useState(null); // Track lead being converted
+    const [convertingLeadId, setConvertingLeadId] = useState(null);
     const [inviteLink, setInviteLink] = useState('');
     const [inviteRole, setInviteRole] = useState('Member');
     const [generatedLinks, setGeneratedLinks] = useState([]);
     const [plans, setPlans] = useState([]);
     const [membershipPlans, setMembershipPlans] = useState([]);
     const [ptPlans, setPtPlans] = useState([]);
+    const [loadedBranchId, setLoadedBranchId] = useState(null);
 
-    React.useEffect(() => {
-        fetchData();
-    }, []);
+    useFocusEffect(
+        React.useCallback(() => {
+            if (branchId) {
+                if (branchId !== loadedBranchId) {
+                    setUsers([]);
+                    setLoading(true);
+                } else if (users.length === 0) {
+                    setLoading(true);
+                }
+                fetchData();
+            } else {
+                setLoading(false);
+            }
+        }, [branchId, loadedBranchId, users.length])
+    );
 
     React.useEffect(() => {
         if (route.params?.prefill) {
@@ -50,12 +88,9 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     }, [route.params]);
 
     const fetchData = async () => {
-        setLoading(true);
         try {
-            const [usersData, plansData] = await Promise.all([
-                adminApi.getUsers(branchId),
-                adminApi.getPlans(branchId) // Assuming getPlans also filters by gym_code/branch
-            ]);
+            const usersData = await adminApi.getUsers(branchId);
+            const plansData = await adminApi.getPlans(branchId);
 
             if (Array.isArray(usersData)) {
                 const mappedUsers = usersData.map(u => ({
@@ -65,14 +100,16 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     email: u.email || '',
                     role: normalizeRole(u.role),
                     gymId: u.gym_code || '-',
-                    assignedTrainerId: u.assigned_trainer_id || null, // Capture ID
-                    assignedTrainer: u.assigned_trainer_name || '-',  // Capture Name
+                    assignedTrainerId: u.assigned_trainer_id || null,
+                    assignedTrainer: u.assigned_trainer_name || '-',
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
                     address: u.address || ''
                 }));
                 setUsers(mappedUsers);
+            } else {
+                setUsers([]);
             }
 
             if (Array.isArray(plansData)) {
@@ -80,8 +117,10 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                 setMembershipPlans(plansData.filter(p => !p.type || p.type === 'Membership'));
                 setPtPlans(plansData.filter(p => p.type === 'Personal Training'));
             }
+            setLoadedBranchId(branchId);
         } catch (error) {
             console.error("Failed to fetch data:", error);
+            Alert.alert("Error", "Failed to load users: " + error.message);
         } finally {
             setLoading(false);
         }
@@ -92,7 +131,6 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
         try {
             const data = await adminApi.getUsers(branchId);
             if (Array.isArray(data)) {
-                // Map backend fields to frontend model if needed
                 const mappedUsers = data.map(u => ({
                     id: u.id,
                     name: u.full_name || 'No Name',
@@ -100,9 +138,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     email: u.email || '',
                     role: normalizeRole(u.role),
                     gymId: u.gym_code || '-',
-                    gymId: u.gym_code || '-',
-                    assignedTrainerId: u.assigned_trainer_id || null, // Capture ID
-                    assignedTrainer: u.assigned_trainer_name || '-',  // Capture Name
+                    assignedTrainerId: u.assigned_trainer_id || null,
+                    assignedTrainer: u.assigned_trainer_name || '-',
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
@@ -112,16 +149,14 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
             }
         } catch (error) {
             console.error("Failed to fetch users:", error);
-            // setUsers([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // Stats
     const totalMembers = users.filter(u => u.role === 'Member' || u.role === 'member').length;
     const totalTrainers = users.filter(u => u.role === 'Trainer' || u.role === 'trainer').length;
-    const pendingInvites = 0; // users.filter(u => u.status === 'Pending').length;
+    const pendingInvites = 0;
 
     const handleAddUser = () => {
         setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '', address: '', plan_id: null, pt_plan_id: null });
@@ -154,7 +189,6 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
         setLoading(true);
         try {
             if (currentUser.id) {
-                // Edit / Update
                 await adminApi.updateUser({
                     id: currentUser.id,
                     name: currentUser.name,
@@ -165,11 +199,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     pt_plan_id: currentUser.pt_plan_id,
                     assigned_trainer_id: currentUser.assignedTrainerId
                 }, branchId);
-
-                // Refresh list locally or fetch
                 setUsers(users.map(u => u.id === currentUser.id ? { ...u, ...currentUser } : u));
             } else {
-                // Create New User (Invitation)
                 await adminApi.createUser({
                     name: currentUser.name,
                     phone: currentUser.phone,
@@ -180,10 +211,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     pt_plan_id: currentUser.pt_plan_id,
                     assigned_trainer_id: currentUser.assignedTrainerId
                 }, branchId);
-
-                // Refresh list from backend (which now includes the pending user)
                 await fetchUsers();
-
                 if (convertingLeadId) {
                     try {
                         await adminApi.updateLead({ id: convertingLeadId, status: 'Converted' }, branchId);
@@ -192,7 +220,6 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     }
                     setConvertingLeadId(null);
                 }
-
                 Alert.alert("Success", "User added. They will appear as 'Pending' until they sign in.");
             }
             setModalVisible(false);
@@ -210,8 +237,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     };
 
     const handleDownloadSample = () => {
-        const header = "name,phone,email,role,address,assignedTrainer\n";
-        const sample = "John Doe,1234567890,john@example.com,Member,123 Main St,\nJane Smith,0987654321,jane@example.com,Trainer,,\n";
+        const header = "name,phone,email,role,subscription,address,assignedTrainer\n";
+        const sample = "John Doe,1234567890,john@example.com,Member,Basic Plan,123 Main St,\nJane Smith,0987654321,jane@example.com,Trainer,,\n";
         const csvContent = header + sample;
 
         if (Platform.OS === 'web') {
@@ -253,6 +280,14 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     if (key === 'full name') key = 'name';
                     user[key] = values[i] || '';
                 });
+
+                if (user.subscription) {
+                    const plan = plans.find(p => p.name.toLowerCase() === user.subscription.toLowerCase());
+                    if (plan) {
+                        user.plan_id = plan.id;
+                    }
+                }
+
                 return user;
             }).filter(u => u.name && (u.phone || u.email));
 
@@ -305,49 +340,38 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     });
 
     return (
-        <View style={styles.container}>
-            {/* Sidebar (Simplified) */}
+        <ScreenWrapper useGradient={false} style={styles.container}>
+            {/* Sidebar for Web */}
             {isWeb && width > 768 && (
                 <View style={styles.sidebar}>
                     <View style={styles.sidebarHeader}>
-                        <Ionicons name="fitness" size={32} color="#3182CE" />
+                        <Ionicons name="fitness" size={32} color={colors.primary} />
                         <Text style={styles.sidebarTitle}>FitPlatform</Text>
                     </View>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminDashboard')}>
-                        <Ionicons name="grid-outline" size={20} color="#4A5568" />
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="grid-outline" size={20} color={colors.text.secondary} />
                         <Text style={styles.sidebarItemText}>Dashboard</Text>
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager')}>
-                        <Ionicons name="document-text-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Content</Text>
-                    </TouchableOpacity> */}
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement')}>
-                        <Ionicons name="funnel-outline" size={20} color="#4A5568" />
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="funnel-outline" size={20} color={colors.text.secondary} />
                         <Text style={styles.sidebarItemText}>Leads</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.sidebarItem}
-                        onPress={() => navigation.navigate('AdminBranding')}
-                    >
-                        <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="color-palette-outline" size={20} color={colors.text.secondary} />
                         <Text style={styles.sidebarItemText}>Branding</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.sidebarItemActive}>
-                        <Ionicons name="people-outline" size={20} color="#3182CE" />
+                        <Ionicons name="people" size={20} color={colors.primary} />
                         <Text style={styles.sidebarItemTextActive}>Users</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings')}>
-                        <Ionicons name="settings-outline" size={20} color="#4A5568" />
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="settings-outline" size={20} color={colors.text.secondary} />
                         <Text style={styles.sidebarItemText}>Settings</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling')}>
-                        <Ionicons name="card-outline" size={20} color="#4A5568" />
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="card-outline" size={20} color={colors.text.secondary} />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics')}>
-                        <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
-                        <Text style={styles.sidebarItemText}>Analytics</Text>
-                    </TouchableOpacity> */}
                 </View>
             )}
 
@@ -356,49 +380,86 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.pageTitle}>User Onboarding & Management</Text>
-                        <Text style={styles.pageSubtitle}>Import members and trainers, assign roles, and manage access.</Text>
+                        <Text style={styles.pageSubtitle}>Manage your gym members and trainers</Text>
                     </View>
-                    <TouchableOpacity style={styles.primaryButton} onPress={handleAddUser}>
-                        <Ionicons name="add" size={20} color="#FFF" />
-                        <Text style={styles.primaryButtonText}>Add User</Text>
-                    </TouchableOpacity>
+                    <AnimatedButton
+                        title="Add User"
+                        onPress={handleAddUser}
+                        icon={<Ionicons name="add" size={20} color={colors.white} />}
+                        style={{ width: 140 }}
+                    />
                 </View>
 
                 {/* Quick Stats */}
                 <View style={styles.statsContainer}>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Total Members</Text>
-                        <Text style={styles.statValue}>{totalMembers}</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Total Trainers</Text>
-                        <Text style={styles.statValue}>{totalTrainers}</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Pending Invitations</Text>
-                        <Text style={styles.statValue}>{pendingInvites}</Text>
-                    </View>
+                    <GradientCard
+                        style={styles.statCard}
+                        contentStyle={styles.statCardContent}
+                        useGradient={true}
+                        fullHeight={true}
+                    >
+                        <View style={styles.statIconContainer}>
+                            <Ionicons name="people" size={24} color={colors.white} />
+                        </View>
+                        <View>
+                            <Text style={styles.statLabelLight}>Total Members</Text>
+                            <Text style={styles.statValueLight}>{totalMembers}</Text>
+                        </View>
+                    </GradientCard>
+                    <GradientCard
+                        style={styles.statCard}
+                        contentStyle={styles.statCardContent}
+                        useGradient={true}
+                        gradientColors={colors.trainerGradient}
+                        fullHeight={true}
+                    >
+                        <View style={styles.statIconContainer}>
+                            <Ionicons name="fitness" size={24} color={colors.white} />
+                        </View>
+                        <View>
+                            <Text style={styles.statLabelLight}>Total Trainers</Text>
+                            <Text style={styles.statValueLight}>{totalTrainers}</Text>
+                        </View>
+                    </GradientCard>
+                    <GradientCard
+                        style={styles.statCard}
+                        contentStyle={styles.statCardContent}
+                        useGradient={true}
+                        gradientColors={colors.accentGradient}
+                        fullHeight={true}
+                    >
+                        <View style={styles.statIconContainer}>
+                            <Ionicons name="mail" size={24} color={colors.white} />
+                        </View>
+                        <View>
+                            <Text style={styles.statLabelLight}>Pending Invites</Text>
+                            <Text style={styles.statValueLight}>{pendingInvites}</Text>
+                        </View>
+                    </GradientCard>
                 </View>
 
                 <View style={styles.gridContainer}>
                     {/* Bulk Import */}
-                    <View style={styles.card}>
+                    <GradientCard style={styles.gridItem} glassmorphic={true}>
                         <Text style={styles.cardTitle}>Bulk Import</Text>
                         <View style={styles.uploadArea}>
-                            <Ionicons name="cloud-upload-outline" size={40} color="#CBD5E0" />
-                            <Text style={styles.uploadText}>Drag & drop CSV file here or click to upload</Text>
+                            <Ionicons name="cloud-upload-outline" size={40} color={colors.text.tertiary} />
+                            <Text style={styles.uploadText}>Drag & drop CSV file here</Text>
                             <Text style={styles.uploadHint}>Supported fields: name, phone, email, role, address, assignedTrainer</Text>
-                            <TouchableOpacity style={styles.outlineButton} onPress={handleFileUpload}>
-                                <Text style={styles.outlineButtonText}>Upload CSV File</Text>
-                            </TouchableOpacity>
+                            <AnimatedButton
+                                title="Upload CSV File"
+                                onPress={handleFileUpload}
+                                variant="outline"
+                                style={{ marginTop: spacing.md }}
+                            />
                         </View>
                         <TouchableOpacity style={styles.linkButton} onPress={handleDownloadSample}>
                             <Text style={styles.linkButtonText}>Download sample CSV</Text>
                         </TouchableOpacity>
-                    </View>
+                    </GradientCard>
 
                     {/* Invitation Links */}
-                    <View style={styles.card}>
+                    <GradientCard style={styles.gridItem} glassmorphic={true}>
                         <Text style={styles.cardTitle}>Invitation Links</Text>
                         <View style={styles.inviteControls}>
                             <View style={styles.selectWrapper}>
@@ -418,15 +479,19 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                                     </TouchableOpacity>
                                 </View>
                             </View>
-                            <TouchableOpacity style={styles.secondaryButton} onPress={generateInviteLink}>
-                                <Text style={styles.secondaryButtonText}>Generate Link</Text>
-                            </TouchableOpacity>
+                            <AnimatedButton
+                                title="Generate Link"
+                                onPress={generateInviteLink}
+                                variant="secondary"
+                                size="small"
+                                style={{ width: 120 }}
+                            />
                         </View>
                         {inviteLink ? (
                             <View style={styles.linkDisplay}>
                                 <Text style={styles.linkText} numberOfLines={1}>{inviteLink}</Text>
                                 <TouchableOpacity onPress={() => alert('Copied!')}>
-                                    <Ionicons name="copy-outline" size={20} color="#3182CE" />
+                                    <Ionicons name="copy-outline" size={20} color={colors.primary} />
                                 </TouchableOpacity>
                             </View>
                         ) : null}
@@ -438,19 +503,20 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                                 </View>
                             ))}
                         </View>
-                    </View>
+                    </GradientCard>
                 </View>
 
                 {/* User Management Table */}
-                <View style={styles.tableCard}>
+                <GradientCard style={styles.tableCard} glassmorphic={true}>
                     <View style={styles.tableHeader}>
                         <Text style={styles.cardTitle}>User Management</Text>
                         <View style={styles.tableControls}>
-                            <TextInput
-                                style={styles.searchInput}
+                            <StandardInput
                                 placeholder="Search by name or phone..."
                                 value={searchQuery}
                                 onChangeText={setSearchQuery}
+                                containerStyle={{ width: 250, marginBottom: 0 }}
+                                leftIcon={<Ionicons name="search" size={18} color={colors.text.tertiary} />}
                             />
                             <View style={styles.filterTabs}>
                                 {['All', 'Members', 'Trainers', 'Pending'].map(f => (
@@ -466,64 +532,82 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                         </View>
                     </View>
 
-                    <View style={styles.tableContainer}>
-                        {loading ? (
-                            <View style={{ padding: 20, alignItems: 'center' }}>
-                                <ActivityIndicator size="large" color="#3182CE" />
-                                <Text style={{ marginTop: 10, color: '#718096' }}>Loading users...</Text>
-                            </View>
-                        ) : filteredUsers.length === 0 ? (
-                            <View style={{ padding: 40, alignItems: 'center', backgroundColor: '#FFF' }}>
-                                <Ionicons name="people-outline" size={48} color="#CBD5E0" />
-                                <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>No users found.</Text>
-                                <Text style={{ color: '#A0AEC0', fontSize: 14 }}>Try adding a new user or inviting active members.</Text>
-                            </View>
-                        ) : (
-                            <View>
-                                <View style={styles.tableRowHeader}>
-                                    <Text style={[styles.tableCell, styles.colAvatar]}></Text>
-                                    <Text style={[styles.tableCell, styles.colName, styles.headerText]}>Full Name</Text>
-                                    <Text style={[styles.tableCell, styles.colPhone, styles.headerText]}>Phone</Text>
-                                    <Text style={[styles.tableCell, styles.colRole, styles.headerText]}>Role</Text>
-                                    <Text style={[styles.tableCell, styles.colGymId, styles.headerText]}>Gym ID</Text>
-                                    <Text style={[styles.tableCell, styles.colTrainer, styles.headerText]}>Assigned Trainer</Text>
-                                    <Text style={[styles.tableCell, styles.colStatus, styles.headerText]}>Status</Text>
-                                    <Text style={[styles.tableCell, styles.colActions, styles.headerText]}>Actions</Text>
+                    <ScrollView horizontal={true} showsHorizontalScrollIndicator={true}>
+                        <View style={styles.tableContainer}>
+                            {loading ? (
+                                <View style={{ padding: 40, alignItems: 'center', width: '100%' }}>
+                                    <ActivityIndicator size="large" color={colors.primary} />
+                                    <Text style={{ marginTop: 10, color: colors.text.secondary }}>Loading users...</Text>
                                 </View>
-                                {filteredUsers.map(user => (
-                                    <View key={user.id} style={styles.tableRow}>
-                                        <View style={[styles.tableCell, styles.colAvatar]}>
-                                            <View style={styles.avatarPlaceholder}>
-                                                <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
-                                            </View>
-                                        </View>
-                                        <Text style={[styles.tableCell, styles.colName]}>{user.name}</Text>
-                                        <Text style={[styles.tableCell, styles.colPhone]}>{user.phone}</Text>
-                                        <View style={[styles.tableCell, styles.colRole]}>
-                                            <View style={[styles.badge, user.role === 'Trainer' ? styles.badgeTrainer : styles.badgeMember]}>
-                                                <Text style={[styles.badgeText, user.role === 'Trainer' ? styles.badgeTextTrainer : styles.badgeTextMember]}>{user.role}</Text>
-                                            </View>
-                                        </View>
-                                        <Text style={[styles.tableCell, styles.colGymId]}>{user.gymId}</Text>
-                                        <Text style={[styles.tableCell, styles.colTrainer]}>{user.assignedTrainer}</Text>
-                                        <View style={[styles.tableCell, styles.colStatus]}>
-                                            <View style={[styles.statusDot, user.status === 'Active' ? styles.statusActive : styles.statusPending]} />
-                                            <Text style={styles.statusText}>{user.status}</Text>
-                                        </View>
-                                        <View style={[styles.tableCell, styles.colActions]}>
-                                            <TouchableOpacity onPress={() => handleEditUser(user)} style={styles.actionButton}>
-                                                <Ionicons name="create-outline" size={18} color="#4A5568" />
-                                            </TouchableOpacity>
-                                            <TouchableOpacity onPress={() => handleDeleteUser(user.id)} style={styles.actionButton}>
-                                                <Ionicons name="trash-outline" size={18} color="#E53E3E" />
-                                            </TouchableOpacity>
-                                        </View>
+                            ) : filteredUsers.length === 0 ? (
+                                <View style={{ padding: 40, alignItems: 'center', width: '100%' }}>
+                                    <Ionicons name="people-outline" size={48} color={colors.text.disabled} />
+                                    <Text style={{ marginTop: 16, color: colors.text.secondary, fontSize: 16 }}>No users found.</Text>
+                                </View>
+                            ) : (
+                                <View>
+                                    <View style={styles.tableRowHeader}>
+                                        <Text style={[styles.tableCell, styles.colAvatar]}></Text>
+                                        <Text style={[styles.tableCell, styles.colName, styles.headerText]}>Full Name</Text>
+                                        <Text style={[styles.tableCell, styles.colPhone, styles.headerText]}>Phone</Text>
+                                        <Text style={[styles.tableCell, styles.colRole, styles.headerText]}>Role</Text>
+                                        <Text style={[styles.tableCell, styles.colSubscription, styles.headerText]}>Subscription</Text>
+                                        <Text style={[styles.tableCell, styles.colGymId, styles.headerText]}>Gym ID</Text>
+                                        <Text style={[styles.tableCell, styles.colTrainer, styles.headerText]}>Assigned Trainer</Text>
+                                        <Text style={[styles.tableCell, styles.colStatus, styles.headerText]}>Status</Text>
+                                        <Text style={[styles.tableCell, styles.colActions, styles.headerText]}>Actions</Text>
                                     </View>
-                                ))}
-                            </View>
-                        )}
-                    </View>
-                </View>
+                                    {filteredUsers.map(user => {
+                                        const planName = plans.find(p => p.id === user.plan_id)?.name || '-';
+                                        return (
+                                            <View key={user.id} style={styles.tableRow}>
+                                                <View style={[styles.tableCell, styles.colAvatar]}>
+                                                    <View style={styles.avatarPlaceholder}>
+                                                        <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+                                                    </View>
+                                                </View>
+                                                <Text style={[styles.tableCell, styles.colName]}>{user.name}</Text>
+                                                <Text style={[styles.tableCell, styles.colPhone]}>{user.phone}</Text>
+                                                <View style={[styles.tableCell, styles.colRole]}>
+                                                    <View style={[
+                                                        styles.badge,
+                                                        user.role === 'Trainer' ? styles.badgeTrainer :
+                                                            user.role === 'Owner' ? styles.badgeOwner :
+                                                                user.role === 'Admin' ? styles.badgeAdmin :
+                                                                    styles.badgeMember
+                                                    ]}>
+                                                        <Text style={[
+                                                            styles.badgeText,
+                                                            user.role === 'Trainer' ? styles.badgeTextTrainer :
+                                                                user.role === 'Owner' ? styles.badgeTextOwner :
+                                                                    user.role === 'Admin' ? styles.badgeTextAdmin :
+                                                                        styles.badgeTextMember
+                                                        ]}>{user.role}</Text>
+                                                    </View>
+                                                </View>
+                                                <Text style={[styles.tableCell, styles.colSubscription]}>{planName}</Text>
+                                                <Text style={[styles.tableCell, styles.colGymId]}>{user.gymId}</Text>
+                                                <Text style={[styles.tableCell, styles.colTrainer]}>{user.assignedTrainer}</Text>
+                                                <View style={[styles.tableCell, styles.colStatus]}>
+                                                    <View style={[styles.statusDot, user.status === 'Active' ? styles.statusActive : styles.statusPending]} />
+                                                    <Text style={styles.statusText}>{user.status}</Text>
+                                                </View>
+                                                <View style={[styles.tableCell, styles.colActions]}>
+                                                    <TouchableOpacity onPress={() => handleEditUser(user)} style={styles.actionButton}>
+                                                        <Ionicons name="create-outline" size={18} color={colors.text.secondary} />
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity onPress={() => handleDeleteUser(user.id)} style={styles.actionButton}>
+                                                        <Ionicons name="trash-outline" size={18} color={colors.error} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            )}
+                        </View>
+                    </ScrollView>
+                </GradientCard>
             </ScrollView>
 
             {/* Add/Edit User Modal */}
@@ -533,127 +617,130 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                 visible={modalVisible}
                 onRequestClose={() => setModalVisible(false)}
             >
-                <View style={styles.modalContainer}>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>{currentUser?.id ? 'Edit User' : 'Add New User'}</Text>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <Text style={styles.modalTitle}>{currentUser?.id ? 'Edit User' : 'Add New User'}</Text>
 
-                        <Text style={styles.label}>Full Name</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={currentUser?.name}
-                            onChangeText={(t) => setCurrentUser({ ...currentUser, name: t })}
-                        />
+                            <StandardInput
+                                label="Full Name"
+                                value={currentUser?.name}
+                                onChangeText={(t) => setCurrentUser({ ...currentUser, name: t })}
+                            />
 
-                        <Text style={styles.label}>Phone</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={currentUser?.phone}
-                            onChangeText={(t) => setCurrentUser({ ...currentUser, phone: t })}
-                            keyboardType="phone-pad"
-                        />
+                            <StandardInput
+                                label="Phone"
+                                value={currentUser?.phone}
+                                onChangeText={(t) => setCurrentUser({ ...currentUser, phone: t })}
+                                keyboardType="phone-pad"
+                            />
 
-                        <Text style={styles.label}>Email</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={currentUser?.email}
-                            onChangeText={(t) => setCurrentUser({ ...currentUser, email: t })}
-                            keyboardType="email-address"
-                        />
+                            <StandardInput
+                                label="Email"
+                                value={currentUser?.email}
+                                onChangeText={(t) => setCurrentUser({ ...currentUser, email: t })}
+                                keyboardType="email-address"
+                            />
 
-                        <Text style={styles.label}>Address</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={currentUser?.address}
-                            onChangeText={(t) => setCurrentUser({ ...currentUser, address: t })}
-                            placeholder="Enter full address"
-                        />
+                            <StandardInput
+                                label="Address"
+                                value={currentUser?.address}
+                                onChangeText={(t) => setCurrentUser({ ...currentUser, address: t })}
+                                placeholder="Enter full address"
+                            />
 
-                        <Text style={styles.label}>Role</Text>
-                        <View style={styles.roleToggle}>
-                            <TouchableOpacity
-                                style={[styles.roleOption, currentUser?.role === 'Member' && styles.roleOptionActive]}
-                                onPress={() => setCurrentUser({ ...currentUser, role: 'Member' })}
-                            >
-                                <Text style={[styles.roleOptionText, currentUser?.role === 'Member' && styles.roleOptionTextActive]}>Member</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.roleOption, currentUser?.role === 'Trainer' && styles.roleOptionActive]}
-                                onPress={() => setCurrentUser({ ...currentUser, role: 'Trainer' })}
-                            >
-                                <Text style={[styles.roleOptionText, currentUser?.role === 'Trainer' && styles.roleOptionTextActive]}>Trainer</Text>
-                            </TouchableOpacity>
-                        </View>
+                            <Text style={styles.label}>Role</Text>
+                            <View style={styles.roleToggle}>
+                                <TouchableOpacity
+                                    style={[styles.roleOption, currentUser?.role === 'Member' && styles.roleOptionActive]}
+                                    onPress={() => setCurrentUser({ ...currentUser, role: 'Member' })}
+                                >
+                                    <Text style={[styles.roleOptionText, currentUser?.role === 'Member' && styles.roleOptionTextActive]}>Member</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.roleOption, currentUser?.role === 'Trainer' && styles.roleOptionActive]}
+                                    onPress={() => setCurrentUser({ ...currentUser, role: 'Trainer' })}
+                                >
+                                    <Text style={[styles.roleOptionText, currentUser?.role === 'Trainer' && styles.roleOptionTextActive]}>Trainer</Text>
+                                </TouchableOpacity>
+                            </View>
 
-                        {currentUser?.role === 'Member' && (
-                            <>
-                                <Text style={styles.label}>Subscription Plan</Text>
-                                <View style={styles.pickerContainer}>
-                                    <Dropdown
-                                        style={styles.dropdown}
-                                        placeholderStyle={styles.placeholderStyle}
-                                        selectedTextStyle={styles.selectedTextStyle}
-                                        data={membershipPlans}
-                                        maxHeight={300}
-                                        labelField="name"
-                                        valueField="id"
-                                        placeholder="Select Main Membership (Required)"
-                                        value={currentUser?.plan_id}
-                                        onChange={item => {
-                                            setCurrentUser({ ...currentUser, plan_id: item.id });
-                                        }}
-                                    />
-                                </View>
+                            {currentUser?.role === 'Member' && (
+                                <>
+                                    <Text style={styles.label}>Subscription Plan</Text>
+                                    <View style={styles.pickerContainer}>
+                                        <Dropdown
+                                            style={styles.dropdown}
+                                            placeholderStyle={styles.placeholderStyle}
+                                            selectedTextStyle={styles.selectedTextStyle}
+                                            data={membershipPlans}
+                                            maxHeight={300}
+                                            labelField="name"
+                                            valueField="id"
+                                            placeholder="Select Main Membership (Required)"
+                                            value={currentUser?.plan_id}
+                                            onChange={item => {
+                                                setCurrentUser({ ...currentUser, plan_id: item.id });
+                                            }}
+                                        />
+                                    </View>
 
-                                <Text style={styles.label}>Personal Training Plan (Optional)</Text>
-                                <View style={styles.pickerContainer}>
-                                    <Dropdown
-                                        style={styles.dropdown}
-                                        placeholderStyle={styles.placeholderStyle}
-                                        selectedTextStyle={styles.selectedTextStyle}
-                                        data={ptPlans}
-                                        maxHeight={300}
-                                        labelField="name"
-                                        valueField="id"
-                                        placeholder="Select PT Plan"
-                                        value={currentUser?.pt_plan_id}
-                                        onChange={item => {
-                                            setCurrentUser({ ...currentUser, pt_plan_id: item.id });
-                                        }}
-                                    />
-                                </View>
+                                    <Text style={styles.label}>Personal Training Plan (Optional)</Text>
+                                    <View style={styles.pickerContainer}>
+                                        <Dropdown
+                                            style={styles.dropdown}
+                                            placeholderStyle={styles.placeholderStyle}
+                                            selectedTextStyle={styles.selectedTextStyle}
+                                            data={ptPlans}
+                                            maxHeight={300}
+                                            labelField="name"
+                                            valueField="id"
+                                            placeholder="Select PT Plan"
+                                            value={currentUser?.pt_plan_id}
+                                            onChange={item => {
+                                                setCurrentUser({ ...currentUser, pt_plan_id: item.id });
+                                            }}
+                                        />
+                                    </View>
 
-                                <Text style={styles.label}>Assigned Trainer</Text>
-                                <View style={styles.pickerContainer}>
-                                    <Dropdown
-                                        style={styles.dropdown}
-                                        placeholderStyle={styles.placeholderStyle}
-                                        selectedTextStyle={styles.selectedTextStyle}
-                                        data={users.filter(u => u.role === 'Trainer')}
-                                        maxHeight={300}
-                                        labelField="name"
-                                        valueField="id"
-                                        placeholder="Select Trainer (Optional)"
-                                        value={currentUser?.assignedTrainerId}
-                                        onChange={item => {
-                                            setCurrentUser({ ...currentUser, assignedTrainerId: item.id, assignedTrainer: item.name });
-                                        }}
-                                    />
-                                </View>
-                            </>
-                        )}
+                                    <Text style={styles.label}>Assigned Trainer</Text>
+                                    <View style={styles.pickerContainer}>
+                                        <Dropdown
+                                            style={styles.dropdown}
+                                            placeholderStyle={styles.placeholderStyle}
+                                            selectedTextStyle={styles.selectedTextStyle}
+                                            data={users.filter(u => u.role === 'Trainer')}
+                                            maxHeight={300}
+                                            labelField="name"
+                                            valueField="id"
+                                            placeholder="Select Trainer (Optional)"
+                                            value={currentUser?.assignedTrainerId}
+                                            onChange={item => {
+                                                setCurrentUser({ ...currentUser, assignedTrainerId: item.id, assignedTrainer: item.name });
+                                            }}
+                                        />
+                                    </View>
+                                </>
+                            )}
 
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.saveButton} onPress={handleSaveUser}>
-                                <Text style={styles.saveButtonText}>Save User</Text>
-                            </TouchableOpacity>
-                        </View>
+                            <View style={styles.modalActions}>
+                                <AnimatedButton
+                                    title="Cancel"
+                                    onPress={() => setModalVisible(false)}
+                                    variant="outline"
+                                    style={{ flex: 1, marginRight: spacing.sm }}
+                                />
+                                <AnimatedButton
+                                    title="Save User"
+                                    onPress={handleSaveUser}
+                                    style={{ flex: 1, marginLeft: spacing.sm }}
+                                />
+                            </View>
+                        </ScrollView>
                     </View>
-                </View >
-            </Modal >
-        </View >
+                </KeyboardAvoidingView>
+            </Modal>
+        </ScreenWrapper>
     );
 };
 
@@ -661,13 +748,12 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         flexDirection: 'row',
-        backgroundColor: '#F7FAFC',
     },
     sidebar: {
         width: 250,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.white,
         borderRightWidth: 1,
-        borderRightColor: '#E2E8F0',
+        borderRightColor: colors.border,
         paddingVertical: 24,
         paddingHorizontal: 16,
     },
@@ -678,9 +764,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8,
     },
     sidebarTitle: {
-        fontSize: 20,
+        fontSize: typography.fontSize.xl,
         fontWeight: 'bold',
-        color: '#2D3748',
+        color: colors.text.primary,
         marginLeft: 10,
     },
     sidebarItem: {
@@ -688,7 +774,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: borderRadius.md,
         marginBottom: 4,
     },
     sidebarItemActive: {
@@ -696,18 +782,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: borderRadius.md,
         marginBottom: 4,
         backgroundColor: '#EBF8FF',
     },
     sidebarItemText: {
-        fontSize: 16,
-        color: '#4A5568',
+        fontSize: typography.fontSize.md,
+        color: colors.text.secondary,
         marginLeft: 12,
     },
     sidebarItemTextActive: {
-        fontSize: 16,
-        color: '#3182CE',
+        fontSize: typography.fontSize.md,
+        color: colors.primary,
         marginLeft: 12,
         fontWeight: '600',
     },
@@ -715,242 +801,207 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     contentContainer: {
-        padding: 32,
+        padding: spacing.xxl,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 32,
+        alignItems: 'center',
+        marginBottom: spacing.xxl,
+        flexWrap: 'wrap',
+        gap: 16,
     },
     pageTitle: {
-        fontSize: 28,
+        fontSize: typography.fontSize.xxxl,
         fontWeight: 'bold',
-        color: '#1A202C',
-        marginBottom: 8,
+        color: colors.text.primary,
+        marginBottom: 4,
     },
     pageSubtitle: {
-        fontSize: 16,
-        color: '#718096',
-    },
-    primaryButton: {
-        backgroundColor: '#3182CE',
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-    },
-    primaryButtonText: {
-        color: '#FFF',
-        fontWeight: 'bold',
-        marginLeft: 8,
+        fontSize: typography.fontSize.md,
+        color: colors.text.secondary,
     },
     statsContainer: {
         flexDirection: 'row',
-        gap: 24,
-        marginBottom: 32,
+        justifyContent: 'space-between',
+        flexWrap: 'wrap', // Ensure wrapping on mobile
+        marginBottom: spacing.xxl,
+        gap: spacing.lg,
     },
     statCard: {
         flex: 1,
-        backgroundColor: '#FFF',
-        padding: 20,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        minWidth: 200,
     },
-    statLabel: {
-        fontSize: 14,
-        color: '#718096',
-        marginBottom: 8,
+    statCardContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.lg,
     },
-    statValue: {
-        fontSize: 24,
+    statIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: borderRadius.lg,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: spacing.lg,
+    },
+    statLabelLight: {
+        fontSize: typography.fontSize.sm,
+        color: colors.white,
+        opacity: 0.9,
+    },
+    statValueLight: {
+        fontSize: typography.fontSize.xxl,
         fontWeight: 'bold',
-        color: '#2D3748',
+        color: colors.white,
     },
     gridContainer: {
-        flexDirection: width > 1024 ? 'row' : 'column',
-        gap: 24,
-        marginBottom: 32,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.lg,
+        marginBottom: spacing.xxl,
     },
-    card: {
+    gridItem: {
         flex: 1,
-        backgroundColor: '#FFF',
-        padding: 24,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        minWidth: 300,
     },
     cardTitle: {
-        fontSize: 18,
+        fontSize: typography.fontSize.lg,
         fontWeight: 'bold',
-        color: '#2D3748',
-        marginBottom: 20,
+        color: colors.text.primary,
+        marginBottom: spacing.lg,
     },
     uploadArea: {
         borderWidth: 2,
-        borderColor: '#E2E8F0',
+        borderColor: colors.border,
         borderStyle: 'dashed',
-        borderRadius: 12,
-        padding: 32,
+        borderRadius: borderRadius.lg,
+        padding: spacing.xl,
         alignItems: 'center',
-        backgroundColor: '#F7FAFC',
-        marginBottom: 16,
+        justifyContent: 'center',
+        backgroundColor: colors.background.secondary,
     },
     uploadText: {
-        fontSize: 16,
+        fontSize: typography.fontSize.md,
         fontWeight: '600',
-        color: '#4A5568',
-        marginTop: 12,
-        textAlign: 'center',
+        color: colors.text.secondary,
+        marginBottom: spacing.xs,
+        marginTop: spacing.sm,
     },
     uploadHint: {
-        fontSize: 12,
-        color: '#A0AEC0',
-        marginTop: 8,
-        marginBottom: 16,
+        fontSize: typography.fontSize.sm,
+        color: colors.text.tertiary,
+        marginBottom: spacing.md,
         textAlign: 'center',
     },
-    outlineButton: {
-        borderWidth: 1,
-        borderColor: '#3182CE',
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 6,
-        backgroundColor: '#FFF',
-    },
-    outlineButtonText: {
-        color: '#3182CE',
-        fontWeight: '600',
-    },
     linkButton: {
+        marginTop: spacing.md,
         alignSelf: 'center',
     },
     linkButtonText: {
-        color: '#718096',
-        textDecorationLine: 'underline',
+        color: colors.primary,
+        fontSize: typography.fontSize.sm,
+        fontWeight: '500',
     },
     inviteControls: {
-        marginBottom: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: spacing.lg,
+        flexWrap: 'wrap',
+        gap: spacing.md,
     },
     selectWrapper: {
-        marginBottom: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     label: {
-        fontSize: 14,
+        fontSize: typography.fontSize.sm,
         fontWeight: '600',
-        color: '#4A5568',
-        marginBottom: 8,
+        color: colors.text.secondary,
+        marginRight: spacing.md,
+        marginBottom: spacing.xs,
     },
     roleToggle: {
         flexDirection: 'row',
-        backgroundColor: '#EDF2F7',
-        borderRadius: 8,
+        backgroundColor: colors.background.secondary,
+        borderRadius: borderRadius.md,
         padding: 4,
     },
     roleOption: {
-        flex: 1,
-        paddingVertical: 8,
-        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
         borderRadius: 6,
     },
     roleOptionActive: {
-        backgroundColor: '#FFF',
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
+        backgroundColor: colors.white,
+        ...shadows.sm,
     },
     roleOptionText: {
-        fontSize: 14,
-        color: '#718096',
-        fontWeight: '600',
+        fontSize: typography.fontSize.sm,
+        color: colors.text.secondary,
     },
     roleOptionTextActive: {
-        color: '#3182CE',
-    },
-    secondaryButton: {
-        backgroundColor: '#EDF2F7',
-        paddingVertical: 10,
-        alignItems: 'center',
-        borderRadius: 8,
-    },
-    secondaryButtonText: {
-        color: '#2D3748',
+        color: colors.primary,
         fontWeight: '600',
     },
     linkDisplay: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#EBF8FF',
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 20,
-        justifyContent: 'space-between',
+        backgroundColor: colors.background.secondary,
+        padding: spacing.md,
+        borderRadius: borderRadius.md,
+        marginBottom: spacing.lg,
     },
     linkText: {
-        color: '#3182CE',
         flex: 1,
-        marginRight: 10,
+        color: colors.text.primary,
+        fontSize: typography.fontSize.sm,
+        marginRight: spacing.sm,
     },
     recentLinks: {
-        borderTopWidth: 1,
-        borderTopColor: '#E2E8F0',
-        paddingTop: 16,
+        marginTop: spacing.md,
     },
     subHeader: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#4A5568',
-        marginBottom: 12,
+        fontSize: typography.fontSize.sm,
+        fontWeight: 'bold',
+        color: colors.text.secondary,
+        marginBottom: spacing.sm,
     },
     linkItem: {
-        marginBottom: 8,
+        paddingVertical: spacing.xs,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
     },
     linkItemText: {
-        fontSize: 13,
-        color: '#718096',
+        fontSize: typography.fontSize.sm,
+        color: colors.text.tertiary,
     },
     tableCard: {
-        backgroundColor: '#FFF',
-        borderRadius: 12,
-        padding: 24,
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        flex: 1,
+        padding: 0,
     },
     tableHeader: {
+        padding: spacing.lg,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
         flexWrap: 'wrap',
-        gap: 16,
+        gap: spacing.md,
     },
     tableControls: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 16,
-        flexWrap: 'wrap',
-    },
-    searchInput: {
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        borderRadius: 8,
-        padding: 10,
-        width: 250,
-        fontSize: 14,
+        gap: spacing.md,
     },
     filterTabs: {
         flexDirection: 'row',
-        backgroundColor: '#F7FAFC',
-        borderRadius: 8,
-        padding: 2,
+        backgroundColor: colors.background.secondary,
+        borderRadius: borderRadius.md,
+        padding: 4,
     },
     filterTab: {
         paddingVertical: 6,
@@ -958,169 +1009,140 @@ const styles = StyleSheet.create({
         borderRadius: 6,
     },
     filterTabActive: {
-        backgroundColor: '#FFF',
-        shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
+        backgroundColor: colors.white,
+        ...shadows.sm,
     },
     filterTabText: {
-        fontSize: 13,
-        color: '#718096',
+        fontSize: typography.fontSize.sm,
+        color: colors.text.tertiary,
     },
     filterTabTextActive: {
-        color: '#2D3748',
+        color: colors.primary,
         fontWeight: '600',
     },
     tableContainer: {
-        minWidth: 800,
+        minWidth: 1000,
     },
     tableRowHeader: {
         flexDirection: 'row',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E2E8F0',
-        paddingBottom: 12,
-        marginBottom: 12,
+        backgroundColor: colors.background.secondary,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.lg,
+        alignItems: 'center',
     },
     tableRow: {
         flexDirection: 'row',
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.lg,
         alignItems: 'center',
-        paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#F7FAFC',
-    },
-    tableCell: {
-        paddingHorizontal: 8,
+        borderBottomColor: colors.border,
     },
     headerText: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#A0AEC0',
-        textTransform: 'uppercase',
+        fontWeight: '600',
+        color: colors.text.secondary,
+        fontSize: typography.fontSize.sm,
+    },
+    tableCell: {
+        paddingHorizontal: spacing.sm,
     },
     colAvatar: { width: 50 },
-    colName: { flex: 2 },
-    colPhone: { flex: 1.5 },
-    colEmail: { flex: 2 },
+    colName: { flex: 1.5, fontWeight: '500', color: colors.text.primary },
+    colPhone: { flex: 1.2, color: colors.text.secondary },
     colRole: { flex: 1 },
-    colGymId: { flex: 1 },
-    colTrainer: { flex: 1.5 },
+    colSubscription: { flex: 1.2, color: colors.text.secondary },
+    colGymId: { flex: 1, color: colors.text.tertiary },
+    colTrainer: { flex: 1.2, color: colors.text.secondary },
     colStatus: { flex: 1 },
-    colActions: { width: 80, flexDirection: 'row', gap: 8 },
+    colActions: { width: 80, flexDirection: 'row', gap: spacing.sm },
 
     avatarPlaceholder: {
         width: 32,
         height: 32,
-        borderRadius: 16,
-        backgroundColor: '#EDF2F7',
+        borderRadius: borderRadius.round,
+        backgroundColor: colors.primaryLight,
         justifyContent: 'center',
         alignItems: 'center',
     },
     avatarText: {
-        fontSize: 14,
+        color: colors.white,
         fontWeight: 'bold',
-        color: '#4A5568',
+        fontSize: typography.fontSize.sm,
     },
     badge: {
         paddingVertical: 4,
         paddingHorizontal: 8,
-        borderRadius: 12,
+        borderRadius: borderRadius.round,
         alignSelf: 'flex-start',
     },
     badgeMember: { backgroundColor: '#EBF8FF' },
     badgeTrainer: { backgroundColor: '#F0FFF4' },
+    badgeOwner: { backgroundColor: '#FAF5FF' },
+    badgeAdmin: { backgroundColor: '#FFF5F5' },
     badgeText: { fontSize: 12, fontWeight: '600' },
     badgeTextMember: { color: '#3182CE' },
     badgeTextTrainer: { color: '#38A169' },
+    badgeTextOwner: { color: '#805AD5' },
+    badgeTextAdmin: { color: '#E53E3E' },
     statusDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
         marginRight: 6,
     },
-    statusActive: { backgroundColor: '#38A169' },
-    statusPending: { backgroundColor: '#D69E2E' },
-    statusText: { fontSize: 14, color: '#4A5568' },
-    actionButton: {
-        padding: 4,
-    },
+    statusActive: { backgroundColor: colors.success },
+    statusPending: { backgroundColor: colors.warning },
+    statusText: { fontSize: typography.fontSize.sm, color: colors.text.secondary },
 
-    // Modal
-    modalOverlay: {
+    // Modal Styles
+    modalContainer: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background.overlay,
+        padding: spacing.lg,
     },
     modalContent: {
-        backgroundColor: '#FFF',
-        borderRadius: 12,
-        padding: 32,
-        width: 500,
-        maxWidth: '90%',
-        shadowColor: '#000',
-        shadowOpacity: 0.25,
-        shadowRadius: 10,
-        elevation: 5,
+        width: '100%',
+        maxWidth: 500,
+        backgroundColor: colors.white,
+        borderRadius: borderRadius.xl,
+        padding: spacing.xl,
+        ...shadows.xl,
+        maxHeight: '90%',
     },
     modalTitle: {
-        fontSize: 24,
+        fontSize: typography.fontSize.xl,
         fontWeight: 'bold',
-        marginBottom: 24,
-        color: '#2D3748',
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        borderRadius: 8,
-        padding: 12,
-        marginBottom: 16,
-        fontSize: 16,
+        color: colors.text.primary,
+        marginBottom: spacing.lg,
+        textAlign: 'center',
     },
     pickerContainer: {
         borderWidth: 1,
-        borderColor: '#E2E8F0',
-        borderRadius: 8,
-        marginBottom: 16,
-        backgroundColor: '#FFF',
+        borderColor: colors.input.border,
+        borderRadius: borderRadius.md,
+        backgroundColor: colors.input.background,
+        marginBottom: spacing.lg,
     },
     dropdown: {
         height: 50,
-        paddingHorizontal: 12,
+        paddingHorizontal: spacing.md,
     },
     placeholderStyle: {
-        fontSize: 16,
-        color: '#A0AEC0',
+        fontSize: typography.fontSize.base,
+        color: colors.input.placeholder,
     },
     selectedTextStyle: {
-        fontSize: 16,
-        color: '#2D3748',
+        fontSize: typography.fontSize.base,
+        color: colors.text.primary,
     },
     modalActions: {
         flexDirection: 'row',
-        justifyContent: 'flex-end',
-        gap: 12,
-        marginTop: 24,
-    },
-    cancelButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    cancelButtonText: {
-        color: '#4A5568',
-        fontWeight: '600',
-    },
-    saveButton: {
-        backgroundColor: '#3182CE',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-    },
-    saveButtonText: {
-        color: '#FFF',
-        fontWeight: 'bold',
+        marginTop: spacing.lg,
+        paddingTop: spacing.lg,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
     },
 });
 

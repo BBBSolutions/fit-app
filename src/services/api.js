@@ -1,7 +1,20 @@
 import { supabase } from "../config/supabaseAuth";
-import { API_BASE_URL } from "../config/supabaseConfig";
+import { API_BASE_URL, SUPABASE_ANON_KEY } from "../config/supabaseConfig";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CUSTOM_TOKEN_KEY = 'fitapp_custom_jwt';
 
 const getHeaders = async () => {
+    // 1. Try Custom JWT first (MVP Auth)
+    const customToken = await AsyncStorage.getItem(CUSTOM_TOKEN_KEY);
+    if (customToken) {
+        return {
+            'Authorization': `Bearer ${customToken}`,
+            'Content-Type': 'application/json'
+        };
+    }
+
+    // 2. Fallback to Supabase Auth (Legacy/Future)
     const { data: { session } } = await supabase.auth.getSession();
 
     if (!session) {
@@ -13,6 +26,7 @@ const getHeaders = async () => {
         'Content-Type': 'application/json'
     };
 };
+
 
 export const api = {
     // Auth
@@ -518,6 +532,52 @@ export const api = {
             headers
         });
         if (!response.ok) throw new Error('Failed to fetch unread count');
+        return response.json();
+    },
+
+    // Custom Auth Helpers
+    setCustomToken: async (token) => {
+        await AsyncStorage.setItem(CUSTOM_TOKEN_KEY, token);
+    },
+    removeCustomToken: async () => {
+        await AsyncStorage.removeItem(CUSTOM_TOKEN_KEY);
+    },
+    sendMsg91OTP: async (phone) => {
+        const headers = {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        };
+        // UPDATED: Now calling send-whatsapp-otp
+        const response = await fetch(`${API_BASE_URL}/send-whatsapp-otp`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ phone })
+        });
+
+        if (!response.ok) {
+            const txt = await response.text();
+            throw new Error(txt || 'Failed to send WhatsApp OTP');
+        }
+        return response.json();
+    },
+
+    verifyMsg91Token: async (phone, authToken, widgetId, expires) => {
+        // Unauthenticated call, so we MANUALLY create headers
+        const headers = {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        };
+
+        const response = await fetch(`${API_BASE_URL}/verify-otp-msg91`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ phone, authToken, widgetId, expires })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText || 'OTP Verification Failed');
+        }
         return response.json();
     }
 };

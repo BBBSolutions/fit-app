@@ -36,25 +36,17 @@ serve(async (req) => {
         // For OTP, MSG91 has a dedicated OTP API, but Supabase sends the code.
         // So we just need to deliver the message content.
 
-        // Using Flow API (Recommended for DLT)
-        // POST https://api.msg91.com/api/v5/flow/
+        // Using OTP API (Required for Verify API to work)
+        // URL: https://api.msg91.com/api/v5/otp
 
-        const response = await fetch("https://api.msg91.com/api/v5/flow/", {
-            method: "POST",
+        const msg91Url = `https://api.msg91.com/api/v5/otp?authkey=${MSG91_AUTH_KEY}&template_id=${MSG91_TEMPLATE_ID}&mobile=${formattedPhone}&otp=${otp}`;
+
+        const response = await fetch(msg91Url, {
+            method: "POST", // MSG91 OTP API supports POST/GET
             headers: {
-                "authkey": MSG91_AUTH_KEY,
                 "content-type": "application/json",
             },
-            body: JSON.stringify({
-                template_id: MSG91_TEMPLATE_ID,
-                sender: MSG91_SENDER_ID,
-                short_url: "0",
-                mobiles: formattedPhone,
-                // Variables mapped in your MSG91 template
-                // e.g., if template satisfies "Your OTP is ##OTP##"
-                otp: otp,
-                // Add other variables if needed
-            }),
+            body: JSON.stringify({}) // Body not needed for query params but POST might require empty body
         });
 
         const data = await response.json();
@@ -64,7 +56,29 @@ serve(async (req) => {
             throw new Error(data.message || "MSG91 failed to send SMS");
         }
 
-        return new Response(JSON.stringify({ success: true, message: "SMS sent successfully" }), {
+        // Generate HMAC Hash for Stateless Verification
+        // Use CUSTOM_JWT_SECRET or fallback to a hardcoded secret for dev if needed (env better)
+        const HASH_SECRET = Deno.env.get("CUSTOM_JWT_SECRET") || "SUPER_SECRET_FALLBACK";
+
+        // Create Hash: HMAC-SHA256(phone + "." + otp, secret)
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(HASH_SECRET);
+        const dataToHash = encoder.encode(`${phone}.${otp}`);
+
+        const cryptoKey = await crypto.subtle.importKey(
+            "raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+        );
+        const signature = await crypto.subtle.sign("HMAC", cryptoKey, dataToHash);
+
+        // Convert to Hex
+        const hashArray = Array.from(new Uint8Array(signature));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        return new Response(JSON.stringify({
+            success: true,
+            message: "SMS sent successfully",
+            hash: hashHex // Return hash to client (client returns it during verify)
+        }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
         });

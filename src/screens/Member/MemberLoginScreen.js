@@ -9,6 +9,10 @@ const MemberLoginScreen = ({ navigation, route }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  // Store Hash & Expiry for Stateless Verification
+  const [otpHash, setOtpHash] = useState(null);
+  const [otpExpiry, setOtpExpiry] = useState(null);
 
   const handleSendOtp = async () => {
     if (phoneNumber.trim() === '') {
@@ -16,18 +20,23 @@ const MemberLoginScreen = ({ navigation, route }) => {
       return;
     }
 
+    setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: phoneNumber,
-      });
-
-      if (error) throw error;
-
-      setOtpSent(true);
-      Alert.alert('Success', 'OTP sent!');
+      const result = await api.sendMsg91OTP(phoneNumber);
+      // Result should contain { success: true, hash, expires }
+      if (result.hash) {
+        setOtpHash(result.hash);
+        setOtpExpiry(result.expires);
+        setOtpSent(true);
+        Alert.alert('Success', 'WhatsApp OTP sent!');
+      } else {
+        throw new Error("No hash returned from server");
+      }
     } catch (err) {
-      console.error("Phone Auth Error:", err);
+      console.error("OTP Error:", err);
       Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,84 +46,82 @@ const MemberLoginScreen = ({ navigation, route }) => {
       return;
     }
 
+    setLoading(true);
     try {
-      // dev hack
-      // import adminApi
-      // We need to import adminApi at top level, let's fix imports first
+      // 1. Verify OTP & Get Token
+      // verifyMsg91Token(phone, otpInput, hash, expiry)
+      const { token } = await api.verifyMsg91Token(phoneNumber, verificationCode, otpHash, otpExpiry);
+      if (!token) throw new Error("Verification failed");
 
-      // ... (rest of logic)
-      // Actually, I should update the imports first.
+      // 2. Set Custom Token
+      await api.setCustomToken(token);
 
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: phoneNumber,
-        token: verificationCode,
-        type: 'sms'
-      });
-
-      if (error) throw error;
-
-      // START: Join Gym Logic
+      // 3. Join Gym Logic (if applicable)
       if (gymCode) {
         try {
+          // TODO: Check if already member? api.joinBranch checks internally or throws?
           await adminApi.joinBranch(gymCode, 'member');
           Alert.alert('Success', `You have successfully joined the gym (${gymCode})!`);
         } catch (joinErr) {
           console.error("Join Gym Error:", joinErr);
-          // Don't block login if join fails, but maybe alert user?
-          // "Failed to join gym. You can try again from Dashboard."
-          Alert.alert('Notice', 'Login successful, but failed to join gym automatically. Please contact reception.');
+          // Only alert if it's a real error, not "Already member"
+          if (joinErr.message?.includes('already a member')) {
+            console.log("Already a member, proceeding...");
+          } else if (!joinErr.message?.includes('Generic error')) {
+            Alert.alert('Notice', 'Login successful. (Join status: ' + joinErr.message + ')');
+          }
         }
       }
-      // END: Join Gym Logic
 
-      // Check Profile Completion
+      // 4. Check Profile & Redirect
       try {
         const profile = await api.getProfile();
         console.log("Login Profile Check (Member):", profile);
 
+        // If profile has name and goal, assume onboarding done
         if (profile && profile.name && profile.goal) {
           navigation.replace('MainApp');
         } else {
-          navigation.navigate('OnboardingSurvey');
+          // If created by Admin, they might have Name but no Goal.
+          // Send to Onboarding to finish setup?
+          // For now, yes, send to OnboardingSurvey to complete profile.
+          navigation.replace('OnboardingSurvey');
         }
       } catch (e) {
-        console.log("Profile incomplete, to onboarding");
-        navigation.navigate('OnboardingSurvey');
+        console.log("Profile check failed, going to onboarding");
+        navigation.replace('OnboardingSurvey');
       }
+
     } catch (err) {
       console.error("Verification Error:", err);
       Alert.alert('Error', `Invalid OTP: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
-
-
 
   // Dev Helper
   const handleGuestLogin = () => {
     const { signInAnonymously } = require('firebase/auth');
-    supabase.auth.signInAnonymously()
-      .then(({ data, error }) => {
-        if (error) throw error;
-        navigation.navigate('OnboardingSurvey');
-      })
-      .catch(e => Alert.alert("Auth Failed", e.message));
+    // ... Legacy or Dev logic can stay if needed, simplified here
+    Alert.alert("Notice", "Guest login deprecated for Msg91 flow.");
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Member Login</Text>
+      <Text style={styles.text}>Member Login (WhatsApp)</Text>
 
       {!otpSent ? (
         <>
           <TextInput
             style={styles.input}
-            placeholder="+1 999 999 9999"
+            placeholder="Phone Number (e.g. 9893569046)"
             value={phoneNumber}
             onChangeText={setPhoneNumber}
             keyboardType="phone-pad"
             autoComplete="tel"
           />
-          <Button title="Send OTP" onPress={handleSendOtp} />
+          <Button title={loading ? "Sending..." : "Send OTP"} onPress={handleSendOtp} disabled={loading} />
         </>
       ) : (
         <>
@@ -125,23 +132,12 @@ const MemberLoginScreen = ({ navigation, route }) => {
             onChangeText={setVerificationCode}
             keyboardType="number-pad"
           />
-          <Button title="Verify OTP" onPress={handleVerifyOtp} />
-          <TouchableOpacity onPress={() => setVerificationId(null)} style={{ marginTop: 10 }}>
+          <Button title={loading ? "Verifying..." : "Verify OTP"} onPress={handleVerifyOtp} disabled={loading} />
+          <TouchableOpacity onPress={() => setOtpSent(false)} style={{ marginTop: 10 }}>
             <Text style={{ color: 'blue' }}>Wrong number? Try again</Text>
           </TouchableOpacity>
         </>
       )}
-
-      <View style={{ marginTop: 40, borderTopWidth: 1, borderColor: '#eee', paddingTop: 20, width: '100%' }}>
-        <Button
-          title="Dev: Login as New Guest"
-          color="#666"
-          onPress={handleGuestLogin}
-        />
-        <Text style={{ textAlign: 'center', marginTop: 5, fontSize: 10, color: '#888' }}>
-          (Testing Only: Creates Anonymous User)
-        </Text>
-      </View>
     </View>
   );
 };

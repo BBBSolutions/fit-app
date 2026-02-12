@@ -249,46 +249,50 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
 
                 {/* Lead Table */}
                 <View style={styles.tableCard}>
-                    <View style={styles.tableHeader}>
-                        <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Lead Name</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Contact</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Source</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Trainer</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Status</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Actions</Text>
-                    </View>
-                    {isLoading ? (
-                        <ActivityIndicator size="large" color="#3182CE" style={{ padding: 40 }} />
-                    ) : filteredLeads.length === 0 ? (
-                        <View style={{ padding: 40, alignItems: 'center' }}>
-                            <Ionicons name="funnel-outline" size={48} color="#CBD5E0" />
-                            <Text style={{ marginTop: 16, color: '#718096' }}>No leads found.</Text>
-                        </View>
-                    ) : filteredLeads.map(lead => (
-                        <TouchableOpacity key={lead.id} style={styles.tableRow} onPress={() => handleLeadClick(lead)}>
-                            <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{lead.name}</Text>
-                            <View style={[styles.tableCell, { flex: 2 }]}>
-                                <Text style={{ fontSize: 13, color: '#2D3748' }}>{lead.phone}</Text>
-                                <Text style={{ fontSize: 12, color: '#718096' }}>{lead.email}</Text>
+                    <ScrollView horizontal={true} showsHorizontalScrollIndicator={true}>
+                        <View style={{ minWidth: 900 }}>
+                            <View style={styles.tableHeader}>
+                                <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Lead Name</Text>
+                                <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Contact</Text>
+                                <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Source</Text>
+                                <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Trainer</Text>
+                                <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Status</Text>
+                                <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Actions</Text>
                             </View>
-                            <Text style={[styles.tableCell, { flex: 1 }]}>{lead.source}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.5, color: '#718096', fontStyle: lead.assigned_trainer_name ? 'normal' : 'italic' }]}>
-                                {lead.assigned_trainer_name || 'Unassigned'}
-                            </Text>
-
-                            <View style={[styles.tableCell, { flex: 1 }]}>
-                                <View style={[styles.statusChip, { backgroundColor: getStatusColor(lead.status) + '20' }]}>
-                                    <Text style={[styles.statusChipText, { color: getStatusColor(lead.status) }]}>{lead.status}</Text>
+                            {isLoading ? (
+                                <ActivityIndicator size="large" color="#3182CE" style={{ padding: 40 }} />
+                            ) : filteredLeads.length === 0 ? (
+                                <View style={{ padding: 40, alignItems: 'center' }}>
+                                    <Ionicons name="funnel-outline" size={48} color="#CBD5E0" />
+                                    <Text style={{ marginTop: 16, color: '#718096' }}>No leads found.</Text>
                                 </View>
-                            </View>
+                            ) : filteredLeads.map(lead => (
+                                <TouchableOpacity key={lead.id} style={styles.tableRow} onPress={() => handleLeadClick(lead)}>
+                                    <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{lead.name}</Text>
+                                    <View style={[styles.tableCell, { flex: 2 }]}>
+                                        <Text style={{ fontSize: 13, color: '#2D3748' }}>{lead.phone}</Text>
+                                        <Text style={{ fontSize: 12, color: '#718096' }}>{lead.email}</Text>
+                                    </View>
+                                    <Text style={[styles.tableCell, { flex: 1 }]}>{lead.source}</Text>
+                                    <Text style={[styles.tableCell, { flex: 1.5, color: '#718096', fontStyle: lead.assigned_trainer_name ? 'normal' : 'italic' }]}>
+                                        {lead.assigned_trainer_name || 'Unassigned'}
+                                    </Text>
 
-                            <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', gap: 8 }]}>
-                                <TouchableOpacity onPress={() => handleLeadClick(lead)}>
-                                    <Ionicons name="create-outline" size={20} color="#718096" />
+                                    <View style={[styles.tableCell, { flex: 1 }]}>
+                                        <View style={[styles.statusChip, { backgroundColor: getStatusColor(lead.status) + '20' }]}>
+                                            <Text style={[styles.statusChipText, { color: getStatusColor(lead.status) }]}>{lead.status}</Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', gap: 8 }]}>
+                                        <TouchableOpacity onPress={() => handleLeadClick(lead)}>
+                                            <Ionicons name="create-outline" size={20} color="#718096" />
+                                        </TouchableOpacity>
+                                    </View>
                                 </TouchableOpacity>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
+                            ))}
+                        </View>
+                    </ScrollView>
                 </View>
 
             </ScrollView>

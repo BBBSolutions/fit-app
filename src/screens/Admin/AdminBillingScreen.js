@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { adminApi } from '../../services/adminApi';
 
 const { width } = Dimensions.get('window');
@@ -20,9 +21,13 @@ const AdminBillingScreen = ({ navigation, route }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useFocusEffect(
+        React.useCallback(() => {
+            if (branchId) {
+                fetchData();
+            }
+        }, [branchId])
+    );
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -87,7 +92,7 @@ const AdminBillingScreen = ({ navigation, route }) => {
                     onPress: async () => {
                         try {
                             setIsLoading(true);
-                            await adminApi.deletePlan(id);
+                            await adminApi.deletePlan(id, branchId);
                             setPlans(plans.filter(p => p.id !== id));
                         } catch (error) {
                             Alert.alert("Error", "Failed to delete plan");
@@ -286,47 +291,50 @@ const AdminBillingScreen = ({ navigation, route }) => {
                                 </View>
                             </View>
                         </View>
-                        <View style={styles.tableContainer}>
-                            <View style={styles.tableRowHeader}>
-                                <Text style={[styles.tableCell, { flex: 2 }]}>Member Name</Text>
-                                <Text style={[styles.tableCell, { flex: 2 }]}>Plan</Text>
-                                <Text style={[styles.tableCell, { flex: 0.8 }]}>PT</Text>
-                                <Text style={[styles.tableCell, { flex: 1 }]}>Status</Text>
-                                <Text style={[styles.tableCell, { flex: 1.5 }]}>Next Billing</Text>
-                                <Text style={[styles.tableCell, { flex: 1 }]}>Amount</Text>
-                                <Text style={[styles.tableCell, { flex: 1.5 }]}>Payment Method</Text>
-                                <Text style={[styles.tableCell, { width: 80 }]}>Actions</Text>
-                            </View>
-                        </View>
-                        {subscriptions.length === 0 ? (
-                            <View style={{ padding: 40, alignItems: 'center' }}>
-                                <Text style={{ color: '#A0AEC0' }}>No active subscriptions.</Text>
-                            </View>
-                        ) : subscriptions.map(sub => (
-                            <View key={sub.id} style={styles.tableRow}>
-                                <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{sub.member}</Text>
-                                <Text style={[styles.tableCell, { flex: 2 }]}>{sub.plan}</Text>
-                                <Text style={[styles.tableCell, { flex: 0.8 }]}>{sub.pt || 'No'}</Text>
-                                <View style={[styles.tableCell, { flex: 1 }]}>
-                                    <View style={[styles.statusBadge,
-                                    sub.status === 'Active' ? styles.statusActive :
-                                        sub.status === 'Past Due' ? styles.statusWarning : styles.statusInactive
-                                    ]}>
-                                        <Text style={[styles.statusText,
-                                        sub.status === 'Active' ? styles.textActive :
-                                            sub.status === 'Past Due' ? styles.textWarning : styles.textInactive
-                                        ]}>{sub.status}</Text>
+                        <ScrollView horizontal={true} showsHorizontalScrollIndicator={true}>
+                            <View style={styles.tableContainer}>
+                                <View style={styles.tableRowHeader}>
+                                    <Text style={[styles.tableCell, { flex: 2 }]}>Member Name</Text>
+                                    <Text style={[styles.tableCell, { flex: 2 }]}>Plan</Text>
+                                    <Text style={[styles.tableCell, { flex: 0.8 }]}>PT</Text>
+                                    <Text style={[styles.tableCell, { flex: 1 }]}>Status</Text>
+                                    <Text style={[styles.tableCell, { flex: 1.5 }]}>Next Billing</Text>
+                                    <Text style={[styles.tableCell, { flex: 1 }]}>Amount</Text>
+                                    <Text style={[styles.tableCell, { flex: 1.5 }]}>Payment Method</Text>
+                                    <Text style={[styles.tableCell, { width: 80 }]}>Actions</Text>
+                                </View>
+
+                                {subscriptions.length === 0 ? (
+                                    <View style={{ padding: 40, alignItems: 'center' }}>
+                                        <Text style={{ color: '#A0AEC0' }}>No active subscriptions.</Text>
                                     </View>
-                                </View>
-                                <Text style={[styles.tableCell, { flex: 1.5 }]}>{sub.nextBilling}</Text>
-                                <Text style={[styles.tableCell, { flex: 1 }]}>₹ {sub.amount}</Text>
-                                <Text style={[styles.tableCell, { flex: 1.5, fontSize: 12, color: '#718096' }]}>{sub.method}</Text>
-                                <View style={[styles.tableCell, { width: 80, flexDirection: 'row', gap: 8 }]}>
-                                    <TouchableOpacity><Ionicons name="eye-outline" size={18} color="#4A5568" /></TouchableOpacity>
-                                    <TouchableOpacity><Ionicons name="ban-outline" size={18} color="#E53E3E" /></TouchableOpacity>
-                                </View>
+                                ) : subscriptions.map(sub => (
+                                    <View key={sub.id} style={styles.tableRow}>
+                                        <Text style={[styles.tableCell, { flex: 2, fontWeight: '500' }]}>{sub.member}</Text>
+                                        <Text style={[styles.tableCell, { flex: 2 }]}>{sub.plan}</Text>
+                                        <Text style={[styles.tableCell, { flex: 0.8 }]}>{sub.pt || 'No'}</Text>
+                                        <View style={[styles.tableCell, { flex: 1 }]}>
+                                            <View style={[styles.statusBadge,
+                                            sub.status === 'Active' ? styles.statusActive :
+                                                sub.status === 'Past Due' ? styles.statusWarning : styles.statusInactive
+                                            ]}>
+                                                <Text style={[styles.statusText,
+                                                sub.status === 'Active' ? styles.textActive :
+                                                    sub.status === 'Past Due' ? styles.textWarning : styles.textInactive
+                                                ]}>{sub.status}</Text>
+                                            </View>
+                                        </View>
+                                        <Text style={[styles.tableCell, { flex: 1.5 }]}>{sub.nextBilling}</Text>
+                                        <Text style={[styles.tableCell, { flex: 1 }]}>₹ {sub.amount}</Text>
+                                        <Text style={[styles.tableCell, { flex: 1.5, fontSize: 12, color: '#718096' }]}>{sub.method}</Text>
+                                        <View style={[styles.tableCell, { width: 80, flexDirection: 'row', gap: 8 }]}>
+                                            <TouchableOpacity><Ionicons name="eye-outline" size={18} color="#4A5568" /></TouchableOpacity>
+                                            <TouchableOpacity><Ionicons name="ban-outline" size={18} color="#E53E3E" /></TouchableOpacity>
+                                        </View>
+                                    </View>
+                                ))}
                             </View>
-                        ))}
+                        </ScrollView>
                     </View>
 
 

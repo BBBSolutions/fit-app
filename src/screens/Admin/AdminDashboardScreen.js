@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Dimensions, Image, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import AdminDrawer from '../../components/AdminDrawer';
 import { adminApi } from '../../services/adminApi';
 
@@ -8,6 +9,9 @@ const isWeb = Platform.OS === 'web';
 
 const AdminDashboardScreen = ({ navigation, route }) => {
     const { branchId, gymCode, branchName } = route.params || {};
+    // React.useEffect(() => {
+    //    alert(`Params: ${JSON.stringify(route.params)}`);
+    // }, [route.params]);
     const [drawerVisible, setDrawerVisible] = useState(false);
     const { width } = useWindowDimensions();
     const isMobile = width < 768;
@@ -43,9 +47,16 @@ const AdminDashboardScreen = ({ navigation, route }) => {
         }
     };
 
-    useEffect(() => {
-        fetchStats();
-    }, []);
+    useFocusEffect(
+        React.useCallback(() => {
+            if (branchId) {
+                fetchStats();
+            } else {
+                // Should not happen via normal flow, but prevents default data leak
+                // console.warn("Dashboard stats skipped: No Branch ID");
+            }
+        }, [branchId])
+    );
 
     const kpis = [
         { title: 'Active Members', value: loading ? '...' : stats.activeMembers, change: null, trend: null, icon: 'people' },
@@ -122,31 +133,31 @@ const AdminDashboardScreen = ({ navigation, route }) => {
                         <Ionicons name="grid-outline" size={20} color="#3182CE" />
                         <Text style={styles.sidebarItemTextActive}>Dashboard</Text>
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode })}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode, branchName })}>
                         <Ionicons name="document-text-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Content</Text>
                     </TouchableOpacity> */}
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode, branchName })}>
                         <Ionicons name="funnel-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Leads</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode, branchName })}>
                         <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Branding</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode, branchName })}>
                         <Ionicons name="people-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Users</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode, branchName })}>
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode })}>
+                    {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode, branchName })}>
                         <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Analytics</Text>
                     </TouchableOpacity> */}
-                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode, branchName })}>
                         <Ionicons name="settings-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Settings</Text>
                     </TouchableOpacity>
@@ -165,8 +176,8 @@ const AdminDashboardScreen = ({ navigation, route }) => {
                                 <Ionicons name="menu" size={28} color="#2D3748" />
                             </TouchableOpacity>
                         )}
-                        <View>
-                            <Text style={styles.pageTitle}>Dashboard Overview {branchName ? `- ${branchName}` : ''}</Text>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.pageTitle, isMobile && { fontSize: 20 }]}>Dashboard Overview {branchName ? `- ${branchName}` : ''}</Text>
                             <Text style={styles.pageSubtitle}>Manage your gym operations, performance, and activity in one place.</Text>
                         </View>
                     </View>
@@ -212,7 +223,7 @@ const AdminDashboardScreen = ({ navigation, route }) => {
                     </View>
 
                     {/* Main Grid Layout */}
-                    <View style={styles.gridContainer}>
+                    <View style={[styles.gridContainer, isMobile && styles.gridContainerMobile]}>
                         {/* Left Column (Main Content) */}
                         <View style={styles.leftColumn}>
 
@@ -238,8 +249,8 @@ const AdminDashboardScreen = ({ navigation, route }) => {
                                 {quickActions.map((action, i) => (
                                     <TouchableOpacity
                                         key={i}
-                                        style={styles.actionCard}
-                                        onPress={() => action.route && navigation.navigate(action.route)}
+                                        style={[styles.actionCard, isMobile && { width: '47%' }]}
+                                        onPress={() => action.route && navigation.navigate(action.route, { branchId, gymCode, branchName })}
                                     >
                                         <Ionicons name={action.icon} size={24} color="#4A5568" />
                                         <Text style={styles.actionLabel}>{action.label}</Text>
@@ -380,6 +391,7 @@ const styles = StyleSheet.create({
     kpiTitle: { fontSize: 13, color: '#718096' },
 
     gridContainer: { flexDirection: 'row', gap: 24 },
+    gridContainerMobile: { flexDirection: 'column' },
     leftColumn: { flex: 2, gap: 32 },
     rightColumn: { flex: 1, gap: 24 },
 

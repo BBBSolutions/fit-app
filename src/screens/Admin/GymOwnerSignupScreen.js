@@ -1,20 +1,101 @@
-
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../config/supabaseAuth';
 import { adminApi } from '../../services/adminApi';
+import { api } from '../../services/api';
 
 import { Country, State, City } from 'country-state-city';
 import { Dropdown } from 'react-native-element-dropdown';
 
 const countriesData = Country.getAllCountries().map(c => ({ label: c.name, value: c.isoCode }));
 
+// REPLACE THESE WITH YOUR ACTUAL KEYS
+const MSG91_WIDGET_ID = "366174674959343238323934";
+const MSG91_TOKEN_AUTH = "489401TrQeYRqt696f3d86P1"; // Usually just the widget ID manages config, but sometimes auth key needed check docs. 
+// Actually for Widget, usually just WidgetID and Token/Auth key is for backend.
+// Frontend widget just needs data-widget-id.
+
 const GymOwnerSignupScreen = ({ navigation }) => {
-    // 1: Owner Info, 2: Phone Verify, 3: Branch Info, 4: Success
+    // 1: Owner Info, 2: Phone Verify (Widget), 3: Branch Info, 4: Success
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
+
+    // OTP State
+    const [showOtpModal, setShowOtpModal] = useState(false);
+    const [enteredOtp, setEnteredOtp] = useState('');
+    const [isLoadingOtp, setIsLoadingOtp] = useState(false);
+    const [otpHash, setOtpHash] = useState(''); // Store the hash
+    const [otpExpires, setOtpExpires] = useState(null); // Store expiry timestamp
+
+    // ...
+
+    const handleStartVerification = async () => {
+        if (!formData.fullName || !formData.phone) {
+            Alert.alert('Missing Fields', 'Please fill in Name and Phone.');
+            return;
+        }
+
+        setIsLoadingOtp(true);
+        try {
+            // 1. Send OTP via Backend
+            // Auto-prepend 91 if user entered 10 digits
+            let phoneToSend = formData.phone;
+            if (phoneToSend.length === 10) {
+                phoneToSend = '91' + phoneToSend;
+            }
+
+            console.log("Sending WhatsApp OTP to", phoneToSend);
+            const res = await api.sendMsg91OTP(phoneToSend);
+            console.log("Send Response:", res);
+
+            if (res.hash) {
+                setOtpHash(res.hash); // Store hash
+                setOtpExpires(res.expires);
+            } else {
+                console.warn("No hash returned from backend!");
+            }
+
+            // 2. Open Modal
+            setEnteredOtp('');
+            setShowOtpModal(true);
+            Alert.alert("WhatsApp OTP Sent", "Please check your WhatsApp messages.");
+        } catch (error) {
+            Alert.alert("Error", error.message);
+        } finally {
+            setIsLoadingOtp(false);
+        }
+    };
+
+    const handleVerifyOTP = async () => {
+        if (!enteredOtp || enteredOtp.length < 6) {
+            Alert.alert("Invalid OTP", "Please enter the 6-digit code.");
+            return;
+        }
+
+        setIsLoadingOtp(true);
+        try {
+            // 3. Verify OTP via Backend (Pass Hash as 3rd arg 'widgetId')
+            // Using the 'widgetId(3rd arg)' slot to pass the HASH
+            let phoneToVerify = formData.phone;
+            if (phoneToVerify.length === 10) {
+                phoneToVerify = '91' + phoneToVerify;
+            }
+            const res = await api.verifyMsg91Token(phoneToVerify, enteredOtp, otpHash, otpExpires);
+            console.log("Verify Success:", res);
+
+            await api.setCustomToken(res.token);
+
+            setShowOtpModal(false);
+            setStep(3);
+            Alert.alert("Success", "Phone Verified!");
+        } catch (error) {
+            Alert.alert("Verification Failed", error.message);
+        } finally {
+            setIsLoadingOtp(false);
+        }
+    };
 
     // Dropdown Data
     const [statesData, setStatesData] = useState([]);
@@ -28,8 +109,6 @@ const GymOwnerSignupScreen = ({ navigation }) => {
         fullName: '',
         email: '',
         phone: '',
-        password: '', // Should be handled, but using OTP flow for now
-
         // Branch Info
         gymName: '',
         branchName: '',
@@ -41,71 +120,9 @@ const GymOwnerSignupScreen = ({ navigation }) => {
         membersCount: '',
     });
 
-    const [verificationCode, setVerificationCode] = useState('');
     const [generatedGymCode, setGeneratedGymCode] = useState('');
 
-    // --- Actions ---
 
-    const handleSendOtp = async () => {
-        if (!formData.fullName || !formData.phone) {
-            Alert.alert('Missing Fields', 'Please fill in Name and Phone.');
-            return;
-        }
-        setLoading(true);
-        try {
-            const { error } = await supabase.auth.signInWithOtp({
-                phone: formData.phone,
-            });
-            if (error) throw error;
-            setStep(2);
-            Alert.alert('Success', 'OTP sent to your phone!');
-        } catch (err) {
-            console.error("Phone Auth Error:", err);
-            Alert.alert('Error', `Failed to send OTP: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleVerifyOtp = async () => {
-        if (verificationCode.trim() === '') {
-            Alert.alert('Error', 'Please enter the OTP');
-            return;
-        }
-        setLoading(true);
-        try {
-            const { data, error } = await supabase.auth.verifyOtp({
-                phone: formData.phone,
-                token: verificationCode,
-                type: 'sms'
-            });
-
-            if (error) throw error;
-
-            // Ensure Owner Record exists
-            try {
-                const { error: ownerError } = await supabase
-                    .from('owners')
-                    .insert({
-                        id: data.user.id,
-                        name: formData.fullName,
-                        email: formData.email || `${formData.phone}@placeholder.com`,
-                        phone: formData.phone,
-                    });
-                if (ownerError && !ownerError.message.includes('duplicate key')) {
-                    console.warn("Owner creation warning:", ownerError);
-                }
-            } catch (e) { console.warn("Owner insert failed", e); }
-
-            // Move to Branch Creation Step
-            setStep(3);
-        } catch (err) {
-            console.error("Verification Error:", err);
-            Alert.alert('Error', `Details: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleRegisterBranch = async () => {
         if (!formData.gymName || !formData.city || !formData.country) {
@@ -116,6 +133,11 @@ const GymOwnerSignupScreen = ({ navigation }) => {
         setLoading(true);
         try {
             const branchRes = await adminApi.createBranch({
+                // Owner Details (for creating 'owners' record)
+                fullName: formData.fullName,
+                email: formData.email,
+                phone: formData.phone,
+                // Branch Details
                 gymName: formData.gymName,
                 branchName: formData.branchName,
                 city: formData.city,
@@ -134,7 +156,6 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             setLoading(false);
         }
     };
-
 
 
     const handleGoToDashboard = () => {
@@ -173,41 +194,18 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             <Text style={styles.label}>Phone Number <Text style={styles.req}>*</Text></Text>
             <TextInput
                 style={styles.input}
-                placeholder="+1 234 567 8900"
+                placeholder="9876543210"
                 keyboardType="phone-pad"
+                maxLength={10}
                 value={formData.phone}
                 onChangeText={(t) => setFormData({ ...formData, phone: t })}
             />
+            <Text style={{ fontSize: 12, color: 'gray', marginBottom: 20 }}>Enter 10-digit mobile number</Text>
 
-            <TouchableOpacity style={styles.button} onPress={handleSendOtp} disabled={loading}>
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Send OTP & Continue</Text>}
+            <TouchableOpacity style={styles.button} onPress={handleStartVerification} disabled={loading}>
+                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify Phone (WhatsApp)</Text>}
             </TouchableOpacity>
         </ScrollView>
-    );
-
-    const renderStep2_WaitOtp = () => (
-        <View style={styles.centerContainer}>
-            <Text style={styles.stepsIndicator}>Step 2 of 3: Verification</Text>
-            <Text style={styles.title}>Verify Phone</Text>
-            <Text style={styles.subtitle}>Enter the code sent to {formData.phone}</Text>
-
-            <TextInput
-                style={[styles.input, { textAlign: 'center', letterSpacing: 8, fontSize: 24, fontWeight: 'bold' }]}
-                placeholder="------"
-                keyboardType="number-pad"
-                maxLength={6}
-                value={verificationCode}
-                onChangeText={setVerificationCode}
-            />
-
-            <TouchableOpacity style={styles.button} onPress={handleVerifyOtp} disabled={loading}>
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setStep(1)} disabled={loading}>
-                <Text style={styles.linkText}>Change Details</Text>
-            </TouchableOpacity>
-        </View>
     );
 
     const renderStep3_BranchInfo = () => (
@@ -293,10 +291,10 @@ const GymOwnerSignupScreen = ({ navigation }) => {
                         search
                         maxHeight={300}
                         labelField="label"
-                        valueField="value" // City doesn't have isoCode usually, use name
+                        valueField="value"
                         placeholder="Select City"
                         searchPlaceholder="Search..."
-                        value={formData.city} // We store Name directly
+                        value={formData.city}
                         onChange={item => {
                             setFormData({ ...formData, city: item.value });
                         }}
@@ -356,14 +354,56 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             </TouchableOpacity>
 
             {step === 1 && renderStep1_OwnerInfo()}
-            {step === 2 && renderStep2_WaitOtp()}
             {step === 3 && renderStep3_BranchInfo()}
             {step === 4 && renderSuccess()}
-        </View>
+
+            {/* Native OTP Modal */}
+            <Modal visible={showOtpModal} animationType="slide" transparent={true} onRequestClose={() => setShowOtpModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.otpContainer}>
+                        <TouchableOpacity style={styles.closeModalButton} onPress={() => setShowOtpModal(false)}>
+                            <Ionicons name="close" size={24} color="#718096" />
+                        </TouchableOpacity>
+
+                        <Text style={styles.modalTitle}>Enter OTP</Text>
+                        <Text style={styles.modalSubtitle}>Sent to {formData.phone}</Text>
+
+                        <TextInput
+                            style={styles.otpInput}
+                            placeholder="123456"
+                            keyboardType="number-pad"
+                            maxLength={6}
+                            value={enteredOtp}
+                            onChangeText={setEnteredOtp}
+                            autoFocus={true}
+                        />
+
+                        <TouchableOpacity style={styles.button} onPress={handleVerifyOTP} disabled={isLoadingOtp}>
+                            {isLoadingOtp ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify</Text>}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={{ marginTop: 20 }} onPress={handleStartVerification} disabled={isLoadingOtp}>
+                            <Text style={{ color: '#3182CE' }}>Resend OTP</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+        </View >
     );
 };
 
-const styles = StyleSheet.create({
+// Styles Update for Modal
+const modalStyles = StyleSheet.create({
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    otpContainer: { width: '85%', backgroundColor: 'white', borderRadius: 16, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
+    closeModalButton: { position: 'absolute', top: 16, right: 16 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
+    modalSubtitle: { fontSize: 14, color: 'gray', marginBottom: 24 },
+    otpInput: { width: '100%', height: 60, fontSize: 24, textAlign: 'center', letterSpacing: 8, borderWidth: 1, borderColor: '#CBD5E0', borderRadius: 8, marginBottom: 24, backgroundColor: '#F7FAFC' }
+});
+
+// Merging styles
+const baseStyles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#FFF' },
     formContainer: { padding: 32, paddingBottom: 100 },
     centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
@@ -405,5 +445,7 @@ const styles = StyleSheet.create({
     codeValue: { fontSize: 48, fontWeight: 'bold', color: '#2C5282', letterSpacing: 4, marginVertical: 8 },
     codeHint: { fontSize: 13, color: '#4A5568', textAlign: 'center' },
 });
+
+const styles = { ...baseStyles, ...modalStyles };
 
 export default GymOwnerSignupScreen;

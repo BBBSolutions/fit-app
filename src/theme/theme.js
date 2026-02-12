@@ -4,7 +4,7 @@
 export const colors = {
     // Primary Gradients
     primaryGradient: ['#667eea', '#764ba2'], // Purple to Deep Purple
-    trainerGradient: ['#5B47E5', '#7B2CBF'], // Deep Purple to Violet
+    trainerGradient: ['#4299E1', '#3182CE'], // Blue to Dark Blue
     accentGradient: ['#FF6B6B', '#FF8E53'], // Coral to Orange
     successGradient: ['#06D6A0', '#00B4D8'], // Teal to Blue
     warningGradient: ['#FFD166', '#F77F00'], // Yellow to Orange
@@ -15,7 +15,7 @@ export const colors = {
     primaryLight: '#9F7AEA',
 
     trainer: {
-        primary: '#7B2CBF',
+        primary: '#3182CE',
         secondary: '#FF6B6B',
         accent: '#06D6A0',
         background: '#F8F9FF',
@@ -69,6 +69,15 @@ export const colors = {
         overlay: 'rgba(0, 0, 0, 0.5)',
         overlayLight: 'rgba(0, 0, 0, 0.3)',
     },
+
+    // UI Elements
+    input: {
+        background: '#F7FAFC',
+        border: '#E2E8F0',
+        text: '#2D3748',
+        placeholder: '#A0AEC0',
+    },
+    border: '#E2E8F0',
 };
 
 export const spacing = {

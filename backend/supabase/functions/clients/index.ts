@@ -19,28 +19,17 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        // Verify/Get User ID from Token (Simplified: in prod use Google Verify)
-        const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await googleRes.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
+        // Verify/Get User ID from Token using Supabase Auth
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
-        const { data: userMap } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-
-        if (!userMap) {
-            console.error("User map not found for UID:", firebaseUid);
-            throw new Error("User not found");
+        if (authError || !user) {
+            console.error("Supabase Auth Error:", authError);
+            throw new Error("Unauthorized: " + (authError?.message || "Invalid Token"));
         }
-        const trainerId = userMap.id;
-        console.log("Resolved Trainer ID:", trainerId);
+
+        // Trainer ID is the authenticated user's ID
+        const trainerId = user.id;
+        console.log("Resolved Trainer ID (Supabase Auth):", trainerId);
 
         const url = new URL(req.url);
         const path = url.pathname.replace(/\/$/, '').split('/').pop(); // "list" or "invite"

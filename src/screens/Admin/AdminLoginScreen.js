@@ -8,24 +8,33 @@ const AdminLoginScreen = ({ navigation }) => {
     const [phoneNumber, setPhoneNumber] = useState('');
     const [otpSent, setOtpSent] = useState(false);
     const [verificationCode, setVerificationCode] = useState('');
+    const [loading, setLoading] = useState(false);
+    // Store Hash & Expiry
+    const [otpHash, setOtpHash] = useState(null);
+    const [otpExpiry, setOtpExpiry] = useState(null);
 
     const handleSendOtp = async () => {
         if (phoneNumber.trim() === '') {
             Alert.alert('Error', 'Please enter a phone number');
             return;
         }
+
+        setLoading(true);
         try {
-            const { error } = await supabase.auth.signInWithOtp({
-                phone: phoneNumber,
-            });
-
-            if (error) throw error;
-
-            setOtpSent(true);
-            Alert.alert('Success', 'OTP sent to your phone!');
+            const res = await api.sendMsg91OTP(phoneNumber);
+            if (res.hash) {
+                setOtpHash(res.hash);
+                setOtpExpiry(res.expires);
+                setOtpSent(true);
+                Alert.alert('Success', 'WhatsApp OTP sent!');
+            } else {
+                throw new Error("No hash returned from server");
+            }
         } catch (err) {
-            console.error("Phone Auth Error:", err);
+            console.error("OTP Error:", err);
             Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -34,20 +43,29 @@ const AdminLoginScreen = ({ navigation }) => {
             Alert.alert('Error', 'Please enter the OTP');
             return;
         }
-        try {
-            const { data, error } = await supabase.auth.verifyOtp({
-                phone: phoneNumber,
-                token: verificationCode,
-                type: 'sms'
-            });
 
-            if (error) throw error;
+        setLoading(true);
+        try {
+            // Verify Msg91 Token (Stateless)
+            const { token } = await api.verifyMsg91Token(phoneNumber, verificationCode, otpHash, otpExpiry);
+
+            if (!token) throw new Error("Verification failed");
+
+            // Check if user is actually an owner?
+            // verifyMsg91 returns { token, user: { role: 'owner' } } (from backend logic)
+            // But we might want to check permissions or just proceed.
+
+            await api.setCustomToken(token);
 
             console.log("Admin Login Success");
+            // Optionally join branch or checks (owners usually create branches or already have them)
             navigation.replace('OwnerBranchList');
+
         } catch (err) {
             console.error("Verification Error:", err);
             Alert.alert('Error', `Invalid OTP: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -80,11 +98,11 @@ const AdminLoginScreen = ({ navigation }) => {
                             onChangeText={setPhoneNumber}
                             keyboardType="phone-pad"
                         />
-                        <Button title="Send Login Code" onPress={handleSendOtp} color="#3182CE" />
+                        <Button title={loading ? "Sending..." : "Send WhatsApp OTP"} onPress={handleSendOtp} color="#3182CE" disabled={loading} />
                     </>
                 ) : (
                     <>
-                        <Text style={styles.label}>Verification Code</Text>
+                        <Text style={styles.label}>Verification Code (6-digit)</Text>
                         <TextInput
                             style={styles.input}
                             placeholder="123456"
@@ -92,7 +110,7 @@ const AdminLoginScreen = ({ navigation }) => {
                             onChangeText={setVerificationCode}
                             keyboardType="number-pad"
                         />
-                        <Button title="Verify & Login" onPress={handleVerifyOtp} color="#3182CE" />
+                        <Button title={loading ? "Verifying..." : "Verify & Login"} onPress={handleVerifyOtp} color="#3182CE" disabled={loading} />
                         <TouchableOpacity onPress={() => setOtpSent(false)} style={{ marginTop: 12 }}>
                             <Text style={{ color: '#3182CE', textAlign: 'center' }}>Use a different number</Text>
                         </TouchableOpacity>

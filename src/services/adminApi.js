@@ -1,8 +1,20 @@
 import { supabase } from "../config/supabaseAuth";
 import { API_BASE_URL, SUPABASE_ANON_KEY } from "../config/supabaseConfig";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CUSTOM_TOKEN_KEY = 'fitapp_custom_jwt';
 
 const getHeaders = async () => {
-    // Get Supabase session token
+    // 1. Try Custom JWT first (MVP Auth)
+    const customToken = await AsyncStorage.getItem(CUSTOM_TOKEN_KEY);
+    if (customToken) {
+        return {
+            'Authorization': `Bearer ${customToken}`,
+            'Content-Type': 'application/json'
+        };
+    }
+
+    // 2. Fallback to Supabase Session
     const { data: { session } } = await supabase.auth.getSession();
 
     if (!session) {
@@ -29,6 +41,24 @@ export const adminApi = {
             const errorText = await response.text();
             console.error("Admin Stats Error:", response.status, errorText);
             throw new Error('Failed to fetch admin stats');
+        }
+
+        return response.json();
+    },
+
+    getAggregatedStats: async () => {
+        const headers = await getHeaders();
+
+        const response = await fetch(`${API_BASE_URL}/admin-dashboard-stats`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ allBranches: true })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Admin Aggregated Stats Error:", response.status, errorText);
+            throw new Error('Failed to fetch aggregated admin stats');
         }
 
         return response.json();
@@ -229,30 +259,30 @@ export const adminApi = {
     updateContent: async (content, branchId) => {
         return adminApi._post('admin-content', { action: 'update', payload: content, branchId });
     },
-    deleteContent: async (id) => {
-        return adminApi._post('admin-content', { action: 'delete', payload: { id } });
+    deleteContent: async (id, branchId) => {
+        return adminApi._post('admin-content', { action: 'delete', payload: { id }, branchId });
     },
 
     // BILLING
-    getPlans: async () => {
-        return adminApi._post('admin-billing', { action: 'fetch_plans' });
+    getPlans: async (branchId) => {
+        return adminApi._post('admin-billing', { action: 'fetch_plans', branchId });
     },
-    createPlan: async (plan) => {
-        return adminApi._post('admin-billing', { action: 'create_plan', payload: plan });
+    createPlan: async (plan, branchId) => {
+        return adminApi._post('admin-billing', { action: 'create_plan', payload: plan, branchId });
     },
-    updatePlan: async (plan) => {
-        return adminApi._post('admin-billing', { action: 'update_plan', payload: plan });
+    updatePlan: async (plan, branchId) => {
+        return adminApi._post('admin-billing', { action: 'update_plan', payload: plan, branchId });
     },
-    deletePlan: async (id) => {
-        return adminApi._post('admin-billing', { action: 'delete_plan', payload: { id } });
+    deletePlan: async (id, branchId) => {
+        return adminApi._post('admin-billing', { action: 'delete_plan', payload: { id }, branchId });
     },
-    getBillingOverview: async () => {
-        return adminApi._post('admin-billing', { action: 'fetch_billing_overview' });
+    getBillingOverview: async (branchId) => {
+        return adminApi._post('admin-billing', { action: 'fetch_billing_overview', branchId });
     },
 
     // ANALYTICS
-    getAnalytics: async () => {
-        return adminApi._post('admin-get-analytics', {});
+    getAnalytics: async (range, branchId) => {
+        return adminApi._post('admin-get-analytics', { branchId, range }); // Assuming backend can handle range too if needed in future
     }
 };
 
