@@ -1,7 +1,14 @@
 -- 1. Create a System User (to own public content)
-INSERT INTO public.app_users (id, firebase_uid, email)
-VALUES ('00000000-0000-0000-0000-000000000000', 'system_admin', 'system@fitapp.com')
-ON CONFLICT (firebase_uid) DO NOTHING;
+-- Note: Supabase ID must be a valid UUID. Using a nil UUID for system.
+
+-- Ensure the system user exists in auth.users first (required by FK)
+INSERT INTO auth.users (id, email)
+VALUES ('00000000-0000-0000-0000-000000000000', 'system@fitapp.com')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.app_users (id, email)
+VALUES ('00000000-0000-0000-0000-000000000000', 'system@fitapp.com')
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. Insert Dummy Public Workouts
 INSERT INTO public.workouts (user_id, title, description, difficulty, duration, is_public, exercises)

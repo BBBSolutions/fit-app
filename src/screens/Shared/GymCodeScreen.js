@@ -1,17 +1,45 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '../../services/api';
 
 const GymCodeScreen = ({ navigation }) => {
     const [gymCode, setGymCode] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (gymCode.trim() === '') {
-            Alert.alert('Error', 'Please enter a Gym Code');
+            if (Platform.OS === 'web') {
+                window.alert('Please enter a Gym Code');
+            } else {
+                Alert.alert('Error', 'Please enter a Gym Code');
+            }
             return;
         }
-        // Navigate to Login passing the gymCode
-        navigation.navigate('Login', { gymCode: gymCode.toUpperCase() });
+
+        setIsLoading(true);
+        try {
+            const isValid = await api.verifyGymCode(gymCode.trim().toUpperCase());
+            if (!isValid) {
+                if (Platform.OS === 'web') {
+                    window.alert('Invalid Gym Code. Please check and try again.');
+                } else {
+                    Alert.alert('Error', 'Invalid Gym Code. Please check and try again.');
+                }
+                setIsLoading(false);
+                return;
+            }
+            // Navigate to Login passing the gymCode
+            navigation.navigate('Login', { gymCode: gymCode.trim().toUpperCase() });
+        } catch (error) {
+            if (Platform.OS === 'web') {
+                window.alert('Something went wrong while verifying the Gym Code.');
+            } else {
+                Alert.alert('Error', 'Something went wrong while verifying the Gym Code.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleSuperAdminAccess = () => {
@@ -27,8 +55,13 @@ const GymCodeScreen = ({ navigation }) => {
                 value={gymCode}
                 onChangeText={setGymCode}
                 autoCapitalize="characters"
+                editable={!isLoading}
             />
-            <Button title="Next" onPress={handleNext} />
+            {isLoading ? (
+                <ActivityIndicator size="large" color="#805AD5" />
+            ) : (
+                <Button title="Next" onPress={handleNext} />
+            )}
 
             <TouchableOpacity style={styles.superAdminButton} onPress={handleSuperAdminAccess}>
                 <Ionicons name="shield-checkmark" size={20} color="#805AD5" />

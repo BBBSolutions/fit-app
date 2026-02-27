@@ -75,9 +75,13 @@ serve(async (req) => {
                 }
                 gymCodes = [branchUser.branches.gym_code];
             } else {
-                // Prevent default fallback to random branch
-                console.error("No branchId provided for dashboard stats");
-                throw new Error("Branch ID is required.");
+                // Fallback: If no branchId provided, grab the first branch the user manages
+                const { data: defaultBranch, error: defaultError } = await query.limit(1).single();
+                if (defaultError || !defaultBranch?.branches?.gym_code) {
+                    console.error("No default branch found for user.");
+                    throw new Error("No branches found for this user. Please ensure a branch exists.");
+                }
+                gymCodes = [defaultBranch.branches.gym_code];
             }
         }
 

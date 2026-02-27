@@ -23,11 +23,11 @@
     "expo-constants": "^18.0.13",
     "expo-device": "^8.0.10",
     "expo-document-picker": "^14.0.8",
-    "expo-firebase-recaptcha": "^2.3.1",
+
     "expo-linear-gradient": "^15.0.8",
     "expo-notifications": "^0.32.16",
     "expo-status-bar": "~3.0.8",
-    "firebase": "^12.6.0",
+
     "https-browserify": "^1.0.0",
     "lodash": "^4.17.21",
     "react": "19.1.0",

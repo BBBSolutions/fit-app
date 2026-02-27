@@ -7,6 +7,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('user-media-public', 'use
 -- 2. Security Policies
 
 -- Private Bucket Policies
+DROP POLICY IF EXISTS "Users can upload their own private media" ON storage.objects;
 CREATE POLICY "Users can upload their own private media"
 ON storage.objects FOR INSERT
 WITH CHECK (
@@ -14,6 +15,7 @@ WITH CHECK (
   (auth.uid()::text = (storage.foldername(name))[1]) 
 );
 
+DROP POLICY IF EXISTS "Users can view their own private media" ON storage.objects;
 CREATE POLICY "Users can view their own private media"
 ON storage.objects FOR SELECT
 USING (
@@ -22,6 +24,7 @@ USING (
 );
 
 -- Public Bucket Policies
+DROP POLICY IF EXISTS "Users can upload their own public media" ON storage.objects;
 CREATE POLICY "Users can upload their own public media"
 ON storage.objects FOR INSERT
 WITH CHECK (
@@ -29,6 +32,7 @@ WITH CHECK (
   (auth.uid()::text = (storage.foldername(name))[1])
 );
 
+DROP POLICY IF EXISTS "Anyone can view public media" ON storage.objects;
 CREATE POLICY "Anyone can view public media"
 ON storage.objects FOR SELECT
 USING ( bucket_id = 'user-media-public' );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity, Platform } from 'react-native';
 import { supabase } from '../../config/supabaseAuth';
 
 import { api } from '../../services/api';
@@ -15,7 +15,11 @@ const AdminLoginScreen = ({ navigation }) => {
 
     const handleSendOtp = async () => {
         if (phoneNumber.trim() === '') {
-            Alert.alert('Error', 'Please enter a phone number');
+            if (Platform.OS === 'web') {
+                window.alert('Please enter a phone number');
+            } else {
+                Alert.alert('Error', 'Please enter a phone number');
+            }
             return;
         }
 
@@ -32,7 +36,11 @@ const AdminLoginScreen = ({ navigation }) => {
             }
         } catch (err) {
             console.error("OTP Error:", err);
-            Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+            if (Platform.OS === 'web') {
+                window.alert(`Failed to send OTP: ${err.message}`);
+            } else {
+                Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+            }
         } finally {
             setLoading(false);
         }
@@ -40,7 +48,11 @@ const AdminLoginScreen = ({ navigation }) => {
 
     const handleVerifyOtp = async () => {
         if (verificationCode.trim() === '') {
-            Alert.alert('Error', 'Please enter the OTP');
+            if (Platform.OS === 'web') {
+                window.alert('Please enter the OTP');
+            } else {
+                Alert.alert('Error', 'Please enter the OTP');
+            }
             return;
         }
 
@@ -63,7 +75,11 @@ const AdminLoginScreen = ({ navigation }) => {
 
         } catch (err) {
             console.error("Verification Error:", err);
-            Alert.alert('Error', `Invalid OTP: ${err.message}`);
+            if (Platform.OS === 'web') {
+                window.alert(`Invalid OTP: ${err.message}`);
+            } else {
+                Alert.alert('Error', `Invalid OTP: ${err.message}`);
+            }
         } finally {
             setLoading(false);
         }

@@ -200,38 +200,6 @@ const TrainerClientListScreen = ({ navigation }) => {
                     onRefresh={handleRefresh}
                 />
 
-                {/* 6. Floating Action Button */}
-                <TouchableOpacity
-                    style={styles.fab}
-                    onPress={() => setShowFabMenu(!showFabMenu)}
-                >
-                    <Ionicons name={showFabMenu ? "close" : "add"} size={30} color="#FFFFFF" />
-                </TouchableOpacity>
-
-                {/* FAB Menu */}
-                {showFabMenu && (
-                    <View style={styles.fabMenuContainer}>
-                        <TouchableOpacity style={styles.fabMenuItem}>
-                            <Text style={styles.fabMenuText}>Bulk Upload</Text>
-                            <View style={styles.fabMenuIcon}>
-                                <Ionicons name="cloud-upload-outline" size={20} color="#4A5568" />
-                            </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.fabMenuItem}>
-                            <Text style={styles.fabMenuText}>Invite Client</Text>
-                            <View style={styles.fabMenuIcon}>
-                                <Ionicons name="mail-outline" size={20} color="#4A5568" />
-                            </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.fabMenuItem}>
-                            <Text style={styles.fabMenuText}>Add New Client</Text>
-                            <View style={styles.fabMenuIcon}>
-                                <Ionicons name="person-add-outline" size={20} color="#4A5568" />
-                            </View>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
             </View>
         </SafeAreaView>
     );

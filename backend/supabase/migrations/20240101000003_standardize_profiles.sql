@@ -5,14 +5,22 @@ DO $$
 BEGIN
     -- activityLevel -> activity_level
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='activityLevel') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "activityLevel" TO activity_level;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='activity_level') THEN
+            ALTER TABLE public.profiles DROP COLUMN "activityLevel";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "activityLevel" TO activity_level;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS activity_level TEXT;
     END IF;
 
     -- workoutDays -> workout_days
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workoutDays') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "workoutDays" TO workout_days;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workout_days') THEN
+            ALTER TABLE public.profiles DROP COLUMN "workoutDays";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "workoutDays" TO workout_days;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS workout_days TEXT;
     END IF;
@@ -22,28 +30,44 @@ BEGIN
 
     -- medicalConditions -> medical_conditions
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='medicalConditions') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "medicalConditions" TO medical_conditions;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='medical_conditions') THEN
+             ALTER TABLE public.profiles DROP COLUMN "medicalConditions";
+        ELSE
+             ALTER TABLE public.profiles RENAME COLUMN "medicalConditions" TO medical_conditions;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS medical_conditions TEXT;
     END IF;
 
     -- workoutLocation -> workout_location
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workoutLocation') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "workoutLocation" TO workout_location;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workout_location') THEN
+            ALTER TABLE public.profiles DROP COLUMN "workoutLocation";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "workoutLocation" TO workout_location;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS workout_location TEXT;
     END IF;
 
     -- trainingStyle -> training_style
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='trainingStyle') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "trainingStyle" TO training_style;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='training_style') THEN
+            ALTER TABLE public.profiles DROP COLUMN "trainingStyle";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "trainingStyle" TO training_style;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS training_style TEXT;
     END IF;
 
     -- exercisesToAvoid -> exercises_to_avoid
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='exercisesToAvoid') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "exercisesToAvoid" TO exercises_to_avoid;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='exercises_to_avoid') THEN
+            ALTER TABLE public.profiles DROP COLUMN "exercisesToAvoid";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "exercisesToAvoid" TO exercises_to_avoid;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS exercises_to_avoid TEXT;
     END IF;

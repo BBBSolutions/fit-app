@@ -166,6 +166,7 @@ export const adminApi = {
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error("Create Branch Error:", response.status, errorText);
             throw new Error(errorText || 'Failed to create branch');
         }
         return response.json();

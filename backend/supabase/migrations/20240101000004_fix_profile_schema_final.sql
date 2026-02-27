@@ -5,42 +5,66 @@ DO $$
 BEGIN
     -- 1. Create or Rename 'activity_level'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='activityLevel') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "activityLevel" TO activity_level;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='activity_level') THEN
+            ALTER TABLE public.profiles DROP COLUMN "activityLevel";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "activityLevel" TO activity_level;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS activity_level TEXT;
     END IF;
 
     -- 2. Create or Rename 'workout_days'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workoutDays') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "workoutDays" TO workout_days;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workout_days') THEN
+            ALTER TABLE public.profiles DROP COLUMN "workoutDays";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "workoutDays" TO workout_days;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS workout_days TEXT;
     END IF;
 
     -- 3. Create or Rename 'medical_conditions'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='medicalConditions') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "medicalConditions" TO medical_conditions;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='medical_conditions') THEN
+             ALTER TABLE public.profiles DROP COLUMN "medicalConditions";
+        ELSE
+             ALTER TABLE public.profiles RENAME COLUMN "medicalConditions" TO medical_conditions;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS medical_conditions TEXT;
     END IF;
 
     -- 4. Create or Rename 'workout_location'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workoutLocation') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "workoutLocation" TO workout_location;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='workout_location') THEN
+            ALTER TABLE public.profiles DROP COLUMN "workoutLocation";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "workoutLocation" TO workout_location;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS workout_location TEXT;
     END IF;
 
     -- 5. Create or Rename 'training_style'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='trainingStyle') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "trainingStyle" TO training_style;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='training_style') THEN
+            ALTER TABLE public.profiles DROP COLUMN "trainingStyle";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "trainingStyle" TO training_style;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS training_style TEXT;
     END IF;
 
     -- 6. Create or Rename 'exercises_to_avoid'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='exercisesToAvoid') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "exercisesToAvoid" TO exercises_to_avoid;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='exercises_to_avoid') THEN
+            ALTER TABLE public.profiles DROP COLUMN "exercisesToAvoid";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "exercisesToAvoid" TO exercises_to_avoid;
+        END IF;
     ELSE
         ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS exercises_to_avoid TEXT;
     END IF;
@@ -49,7 +73,11 @@ BEGIN
     -- Note: initial_schema had check constraint or enum, here we ensure it exists as TEXT or ENUM. 
     -- If user has plan_type_enum, casting might be needed. For now, assuming it handles strings or is compatible.
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='planType') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "planType" TO plan_type;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='plan_type') THEN
+            ALTER TABLE public.profiles DROP COLUMN "planType";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "planType" TO plan_type;
+        END IF;
     ELSE
         -- plan_type might already exist from initial schema.
         -- We only add checks if it's missing entirely to avoid errors.
@@ -58,14 +86,22 @@ BEGIN
 
     -- 8. Create or Rename 'fitness_level'
     IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='fitnessLevel') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "fitnessLevel" TO fitness_level;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='fitness_level') THEN
+            ALTER TABLE public.profiles DROP COLUMN "fitnessLevel";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "fitnessLevel" TO fitness_level;
+        END IF;
     ELSE
          NULL; -- existed as fitness_level
     END IF;
 
     -- 9. Create or Rename 'experience_duration'
      IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='experienceDuration') THEN
-        ALTER TABLE public.profiles RENAME COLUMN "experienceDuration" TO experience_duration;
+        IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='profiles' AND column_name='experience_duration') THEN
+            ALTER TABLE public.profiles DROP COLUMN "experienceDuration";
+        ELSE
+            ALTER TABLE public.profiles RENAME COLUMN "experienceDuration" TO experience_duration;
+        END IF;
     ELSE
          NULL; -- existed as experience_duration
     END IF;

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 console.log("Auth Verify Function Up!");
@@ -13,31 +13,21 @@ serve(async (req) => {
     const { token } = await req.json();
     if (!token) throw new Error("Missing ID Token");
 
-    // 1. Verify Firebase Token
-    // Ideally use firebase-admin, but running in Deno Edge is tricky with Node modules.
-    // We will verify via a simple fetch to Google's public keys or assume client sends valid token 
-    // AND verify strictly against Google's tokeninfo endpoint for MVP security.
-    // Production should use a proper JWT library with cached Google certs.
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-    // Using Google's tokeninfo endpoint (Not recommended for high throughput but works for MVP/Analysis)
-    const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken: token })
-    });
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    const googleData = await googleRes.json();
-    if (googleData.error) throw new Error(googleData.error.message);
-    if (!googleData.users || googleData.users.length === 0) throw new Error("Invalid Token");
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
-    const firebaseUser = googleData.users[0];
-    const { localId: uid, email } = firebaseUser;
+    if (authError || !user) {
+      console.error("Auth error:", authError);
+      throw new Error("Unauthorized");
+    }
 
-    // 2. Sync to Supabase
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const uid = user.id;
+    const email = user.email;
+    const phone = user.phone;
 
     // check if user exists
     const { data: existingUser } = await supabaseClient
@@ -73,8 +63,7 @@ serve(async (req) => {
       // Construct query: gym_code is not known yet, searching global invitations?
       // Yes, invitations are unique by phone/email ideally.
 
-      // Note: firebaseUser.phoneNumber often comes as +1234567890
-      const phone = firebaseUser.phoneNumber;
+      // Phone is already extracted from user.phone
 
       let inviteQuery = supabaseClient.from('invitations').select('*').eq('status', 'pending');
 

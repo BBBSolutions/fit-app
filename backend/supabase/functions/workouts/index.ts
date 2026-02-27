@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 console.log("Workouts Function Up!");
@@ -14,28 +14,20 @@ serve(async (req) => {
         if (!authHeader) throw new Error('Missing Authorization header');
         const token = authHeader.replace('Bearer ', '');
 
-        // Verify Token
-        const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await googleRes.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
+        const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        const { data: userMap } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
-        if (!userMap) throw new Error("User not found");
-        const userId = userMap.id;
+        // 1. Verify Supabase JWT
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+        if (authError || !user) {
+            console.error("Auth error:", authError);
+            throw new Error("Unauthorized");
+        }
+
+        const userId = user.id;
 
         const url = new URL(req.url);
         const pathParts = url.pathname.split('/');
@@ -403,18 +395,7 @@ serve(async (req) => {
         }
 
         // METHOD: POST -> Create (Existing Logic)
-        if (req.method === 'POST') {
-            // ... existing create logic ...
-            // We need to preserve the existing create logic here, but since I am replacing the block, I need to restate it.
-            // Wait, the "TargetContent" was mainly the if (req.method) blocks. 
-            // I should simply insert the new blocks BEFORE the existing blocks, OR replace thoughtfully.
-            // Let's rewrite the logic to be cleaner.
-        }
 
-        // RE-WRITING THE LIST/CREATE LOGIC TO BE SAFE BECAUSE REPLACEMENT IS TRICKY WITH BLOCKS
-        // I will return purely the new response for 'assign'/'assigned' and then fall through to the rest.
-        // But wait, the tool `replace_file_content` replaces a specific block. 
-        // I will replace lines 48-100 (The GET/POST block) with the new expanded logic.
 
         if (lastPart === 'create-custom' && req.method === 'POST') {
             const body = await req.json();

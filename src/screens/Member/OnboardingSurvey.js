@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -39,6 +39,51 @@ const OnboardingSurvey = ({ navigation, route }) => {
         exercisesToAvoid: existingData?.exercisesToAvoid || '',
         planType: existingData?.planType || '',
     });
+
+    useEffect(() => {
+        // If we didn't get existingData from navigation params, try to fetch it
+        if (!existingData) {
+            fetchProfileFallback();
+        }
+    }, [existingData]);
+
+    const fetchProfileFallback = async () => {
+        try {
+            setIsLoading(true);
+            const profile = await api.getProfile();
+            if (profile) {
+                setFormData(prev => ({
+                    ...prev,
+                    name: profile.name || profile.fullName || prev.name,
+                    email: profile.email || prev.email,
+                    age: profile.age ? String(profile.age) : prev.age,
+                    gender: profile.gender || prev.gender,
+                    height: profile.height ? String(profile.height) : prev.height,
+                    weight: profile.weight ? String(profile.weight) : prev.weight,
+                    fitnessLevel: profile.fitnessLevel || prev.fitnessLevel,
+                    experienceDuration: profile.experienceDuration || prev.experienceDuration,
+                    goal: profile.primaryGoal || profile.goal || prev.goal,
+                    waist: profile.waist ? String(profile.waist) : prev.waist,
+                    hip: profile.hip ? String(profile.hip) : prev.hip,
+                    chest: profile.chest ? String(profile.chest) : prev.chest,
+                    arms: profile.arms ? String(profile.arms) : prev.arms,
+                    thighs: profile.thighs ? String(profile.thighs) : prev.thighs,
+                    activityLevel: profile.activityLevel || prev.activityLevel,
+                    workoutDays: profile.workoutDays ? String(profile.workoutDays) : prev.workoutDays,
+                    injuries: profile.injuries || prev.injuries,
+                    medicalConditions: profile.medicalConditions || prev.medicalConditions,
+                    workoutLocation: profile.workoutLocation || prev.workoutLocation,
+                    trainingStyle: profile.trainingStyle || prev.trainingStyle,
+                    exercisesToAvoid: profile.exercisesToAvoid || prev.exercisesToAvoid,
+                    planType: profile.planType || prev.planType,
+                }));
+            }
+        } catch (error) {
+            console.log("Fallback profile fetch failed", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const updateField = (field, value) => {
         setFormData((prev) => ({ ...prev, [field]: value }));

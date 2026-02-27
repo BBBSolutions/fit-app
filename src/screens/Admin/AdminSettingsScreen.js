@@ -8,7 +8,7 @@ import { adminApi } from '../../services/adminApi';
 const isWeb = Platform.OS === 'web';
 
 const AdminSettingsScreen = ({ navigation, route }) => {
-    const { branchId, gymCode } = route.params || {}; // Get branchId from navigation params
+    const { branchId, gymCode, branchName } = route.params || {}; // Get branchId from navigation params
     const [activeSection, setActiveSection] = useState('General');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -280,25 +280,25 @@ const AdminSettingsScreen = ({ navigation, route }) => {
                     <View style={styles.sidebarHeader}>
                         <Ionicons name="fitness" size={32} color="#3182CE" />
                     </View>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode, branchName })}>
                         <Ionicons name="grid-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode })}>
+                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminContentManager', { branchId, gymCode, branchName })}>
                         <Ionicons name="document-text-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity> */}
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode, branchName })}>
                         <Ionicons name="funnel-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode, branchName })}>
                         <Ionicons name="people-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode, branchName })}>
                         <Ionicons name="color-palette-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode })}>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode, branchName })}>
                         <Ionicons name="card-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
-                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode })}>
+                    {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode, branchName })}>
                         <Ionicons name="bar-chart-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity> */}
                     <TouchableOpacity style={styles.mainSidebarItemActive}>

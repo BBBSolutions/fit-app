@@ -174,7 +174,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
     }, [allAssignments, filterMode, selectedDate]);
 
     return (
-        <ScreenWrapper useGradient={true} style={styles.container}>
+        <ScreenWrapper useGradient={false} style={styles.container}>
             {/* Header - Transparent to show gradient */}
             <View style={styles.headerContainer}>
                 <View style={styles.header}>
@@ -183,7 +183,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                         <Text style={styles.headerSubtitle}>Welcome back, {trainerName}!</Text>
                     </View>
                     <TouchableOpacity style={styles.avatarButton} onPress={() => navigation.navigate('Profile')}>
-                        <Ionicons name="person-circle" size={40} color={colors.white} />
+                        <Ionicons name="person-circle" size={40} color={colors.text.primary} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -452,31 +452,6 @@ const TrainerDashboardScreen = ({ navigation }) => {
                 <View style={styles.bottomSpacer} />
             </ScrollView>
 
-            {/* 8. Floating Action Button */}
-            <TouchableOpacity
-                style={styles.fab}
-                onPress={() => setShowFABMenu(!showFABMenu)}
-            >
-                <Ionicons name={showFABMenu ? "close" : "add"} size={28} color="#FFFFFF" />
-            </TouchableOpacity>
-
-            {/* FAB Menu */}
-            {showFABMenu && (
-                <View style={styles.fabMenu}>
-                    <TouchableOpacity style={styles.fabMenuItem}>
-                        <Ionicons name="barbell-outline" size={20} color="#2D3748" />
-                        <Text style={styles.fabMenuText}>Create Workout Plan</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.fabMenuItem}>
-                        <Ionicons name="person-add-outline" size={20} color="#2D3748" />
-                        <Text style={styles.fabMenuText}>Add Client</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.fabMenuItem}>
-                        <Ionicons name="megaphone-outline" size={20} color="#2D3748" />
-                        <Text style={styles.fabMenuText}>Send Broadcast Message</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
         </ScreenWrapper>
     );
 };
@@ -499,12 +474,11 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: typography.fontSize.xxxl,
         fontWeight: typography.fontWeight.extrabold,
-        color: colors.white,
+        color: colors.text.primary,
     },
     headerSubtitle: {
         fontSize: typography.fontSize.base,
-        color: colors.white,
-        opacity: 0.9,
+        color: colors.text.secondary || '#4A5568',
         marginTop: spacing.xs,
     },
     avatarButton: {
@@ -579,11 +553,8 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: colors.white, // Changed to white for better contrast on gradient
+        color: colors.text.primary,
         marginBottom: 12,
-        textShadowColor: 'rgba(0, 0, 0, 0.3)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -593,7 +564,7 @@ const styles = StyleSheet.create({
     },
     filterContainer: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glassy
+        backgroundColor: colors.gray ? colors.gray[100] : '#EDF2F7',
         borderRadius: 8,
         padding: 2,
     },
@@ -608,7 +579,7 @@ const styles = StyleSheet.create({
     filterBtnText: {
         fontSize: 12,
         fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: colors.gray ? colors.gray[500] : '#718096',
     },
     filterBtnTextActive: {
         color: '#3182CE',
@@ -620,7 +591,7 @@ const styles = StyleSheet.create({
     dateItem: {
         width: 50,
         height: 60,
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        backgroundColor: colors.gray ? colors.gray[100] : '#F7FAFC',
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',

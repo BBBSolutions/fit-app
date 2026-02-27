@@ -77,21 +77,23 @@ serve(async (req) => {
                     }
                 }
 
-                // 1. Fetch Branch Users (Active)
+                // 1. Fetch Branch Users (Active) - Only Members and Trainers
                 const { data: bUsers, error: bError } = await supabaseClient
                     .from('branch_users')
                     .select('user_id, role, status, created_at')
                     .in('branch_id', branchIds)
+                    .in('role', ['member', 'trainer'])
                     .order('created_at', { ascending: false });
 
                 if (bError) throw bError;
 
-                // 1b. Fetch Pending Invitations
+                // 1b. Fetch Pending Invitations - Only Members and Trainers
                 const { data: invitations, error: iError } = await supabaseClient
                     .from('invitations')
                     .select('*')
                     .eq('gym_code', gymCode)
-                    .eq('status', 'pending');
+                    .eq('status', 'pending')
+                    .in('role', ['member', 'trainer', 'Member', 'Trainer']);
 
                 if (iError) throw iError;
 
@@ -112,7 +114,7 @@ serve(async (req) => {
                 if (userIds.length > 0) {
                     const { data: pData, error: pError } = await supabaseClient
                         .from('profiles')
-                        .select('user_id, full_name, phone_number, address, assigned_trainer_id')
+                        .select('user_id, name, full_name, phone_number, address, assigned_trainer_id')
                         .in('user_id', userIds);
 
                     if (pError) throw pError;
@@ -137,16 +139,30 @@ serve(async (req) => {
                     return active || { plan_id: null, pt_plan_id: null };
                 };
 
+                // 3. Fetch Owners for Active Users (since owners might not have full profiles)
+                let ownersData = [];
+                if (userIds.length > 0) {
+                    const { data: oData } = await supabaseClient
+                        .from('owners')
+                        .select('id, name, phone, email')
+                        .in('id', userIds);
+                    ownersData = oData || [];
+                }
+
                 // 4. Merge Data
                 const mappedActive = activeUsers.map(u => {
                     const profile = profiles?.find(p => p.user_id === u.user_id) || {};
+                    const ownerEntry = ownersData?.find(o => o.id === u.user_id) || {};
                     const subInfo = getSub(u.user_id);
+
+                    const finalName = profile.full_name || profile.name || ownerEntry.name || 'Unknown';
+                    const finalPhone = profile.phone_number || ownerEntry.phone || 'No Phone';
 
                     return {
                         id: u.user_id,
-                        full_name: profile.full_name || 'Unknown',
-                        phone_number: profile.phone_number || 'No Phone',
-                        email: null,
+                        full_name: finalName,
+                        phone_number: finalPhone,
+                        email: ownerEntry.email || null,
                         role: u.role,
                         status: u.status === 'active' ? 'Active' : 'Pending',
                         created_at: u.created_at,
@@ -441,6 +457,20 @@ serve(async (req) => {
                         });
                 }
 
+                // 5. Assign Trainer (Sync to trainer_clients)
+                if (payload.assigned_trainer_id) {
+                    const { error: tcError } = await supabaseClient
+                        .from('trainer_clients')
+                        .upsert({
+                            trainer_id: payload.assigned_trainer_id,
+                            client_id: newUserId,
+                            status: 'Active', // Default status
+                            gym_code: gymCode
+                        });
+
+                    if (tcError) console.error("Failed to assign trainer in trainer_clients:", tcError);
+                }
+
                 result = { success: true, userId: newUserId };
                 break;
 
@@ -543,6 +573,26 @@ serve(async (req) => {
                             });
                     }
                 }
+
+                // 4. Sync Trainer Assignment to trainer_clients
+                if (payload.assigned_trainer_id !== undefined) {
+                    if (payload.assigned_trainer_id === null) {
+                        await supabaseClient
+                            .from('trainer_clients')
+                            .delete()
+                            .eq('client_id', payload.id)
+                            .eq('gym_code', gymCode);
+                    } else {
+                        await supabaseClient
+                            .from('trainer_clients')
+                            .upsert({
+                                trainer_id: payload.assigned_trainer_id,
+                                client_id: payload.id,
+                                status: 'Active',
+                                gym_code: gymCode
+                            });
+                    }
+                }
                 break;
 
             case 'delete':
@@ -568,7 +618,31 @@ serve(async (req) => {
                 // Note: payload.id for active user is UUID string
                 const { data: deletedProfile, error: delProfileError } = await supabaseClient
                     .from('profiles')
-                    .update({ gym_code: null })
+                    .update({
+                        gym_code: null,
+                        age: null,
+                        gender: null,
+                        height: null,
+                        weight: null,
+                        fitness_level: null,
+                        primary_goal: null,
+                        goal: null,
+                        body_measurements: null,
+                        activity_level: null,
+                        workout_days: null,
+                        injuries: null,
+                        medical_conditions: null,
+                        workout_location: null,
+                        training_style: null,
+                        exercises_to_avoid: null,
+                        experience_duration: null,
+                        plan_type: null,
+                        waist: null,
+                        hip: null,
+                        chest: null,
+                        arms: null,
+                        thighs: null
+                    })
                     .eq('user_id', payload.id)
                     .eq('gym_code', gymCode)
                     .select()
@@ -588,6 +662,13 @@ serve(async (req) => {
                             .eq('gym_code', gymCode)
                     ).data?.map(b => b.id) || []
                     );
+
+                // 4. Remove from trainer_clients
+                await supabaseClient
+                    .from('trainer_clients')
+                    .delete()
+                    .eq('client_id', payload.id)
+                    .eq('gym_code', gymCode);
 
                 result = deletedProfile;
                 break;

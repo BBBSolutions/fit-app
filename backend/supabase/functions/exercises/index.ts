@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 console.log("Exercises Function Up!");
@@ -10,26 +10,22 @@ serve(async (req) => {
     }
 
     try {
-        // Optional: Verify Auth (can be public or authenticated)
-        // For consistency, we verify auth.
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) throw new Error('Missing Authorization header');
         const token = authHeader.replace('Bearer ', '');
 
-        // Verify Firebase Token
-        const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await googleRes.json();
-        if (!googleData.users) throw new Error("Unauthorized");
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-        // Supabase Client
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
+        const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+
+        // 1. Verify Supabase JWT
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+        if (authError || !user) {
+            console.error("Auth error:", authError);
+            throw new Error("Unauthorized");
+        }
 
         const url = new URL(req.url);
         const query = url.searchParams.get('q'); // Search term
@@ -63,4 +59,5 @@ serve(async (req) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
     }
+
 });

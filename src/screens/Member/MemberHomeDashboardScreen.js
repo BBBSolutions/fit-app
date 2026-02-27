@@ -283,25 +283,7 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                 <View style={styles.footerSpacer} />
             </ScrollView>
 
-            {/* 6. Bottom Tabs (Placeholder) */}
-            <View style={styles.bottomTabs}>
-                <TouchableOpacity style={styles.tabItem}>
-                    <Text style={[styles.tabIcon, styles.activeTab]}>🏠</Text>
-                    <Text style={[styles.tabText, styles.activeTab]}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.tabItem}>
-                    <Text style={styles.tabIcon}>💪</Text>
-                    <Text style={styles.tabText}>Workouts</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.tabItem}>
-                    <Text style={styles.tabIcon}>📈</Text>
-                    <Text style={styles.tabText}>Progress</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.tabItem}>
-                    <Text style={styles.tabIcon}>👤</Text>
-                    <Text style={styles.tabText}>Profile</Text>
-                </TouchableOpacity>
-            </View>
+
         </SafeAreaView>
     );
 };
@@ -501,35 +483,7 @@ const styles = StyleSheet.create({
         color: '#4A5568',
         textAlign: 'center',
     },
-    bottomTabs: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: '#FFFFFF',
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingVertical: 12,
-        borderTopWidth: 1,
-        borderTopColor: '#E2E8F0',
-        paddingBottom: 20, // Adjust for safe area if needed
-    },
-    tabItem: {
-        alignItems: 'center',
-    },
-    tabIcon: {
-        fontSize: 20,
-        color: '#A0AEC0',
-        marginBottom: 4,
-    },
-    tabText: {
-        fontSize: 10,
-        color: '#A0AEC0',
-        fontWeight: '600',
-    },
-    activeTab: {
-        color: '#3182CE',
-    },
+
 });
 
 export default MemberHomeDashboardScreen;

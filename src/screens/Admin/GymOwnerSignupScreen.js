@@ -32,8 +32,12 @@ const GymOwnerSignupScreen = ({ navigation }) => {
     // ...
 
     const handleStartVerification = async () => {
-        if (!formData.fullName || !formData.phone) {
-            Alert.alert('Missing Fields', 'Please fill in Name and Phone.');
+        if (!formData.fullName || !formData.phone || !formData.email) {
+            if (Platform.OS === 'web') {
+                window.alert('Please fill in Name, Email, and Phone.');
+            } else {
+                Alert.alert('Missing Fields', 'Please fill in Name, Email, and Phone.');
+            }
             return;
         }
 
@@ -60,9 +64,17 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             // 2. Open Modal
             setEnteredOtp('');
             setShowOtpModal(true);
-            Alert.alert("WhatsApp OTP Sent", "Please check your WhatsApp messages.");
+            if (Platform.OS === 'web') {
+                window.alert("Please check your WhatsApp messages.");
+            } else {
+                Alert.alert("WhatsApp OTP Sent", "Please check your WhatsApp messages.");
+            }
         } catch (error) {
-            Alert.alert("Error", error.message);
+            if (Platform.OS === 'web') {
+                window.alert(`Error: ${error.message}`);
+            } else {
+                Alert.alert("Error", error.message);
+            }
         } finally {
             setIsLoadingOtp(false);
         }
@@ -70,7 +82,11 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
     const handleVerifyOTP = async () => {
         if (!enteredOtp || enteredOtp.length < 6) {
-            Alert.alert("Invalid OTP", "Please enter the 6-digit code.");
+            if (Platform.OS === 'web') {
+                window.alert("Please enter the 6-digit code.");
+            } else {
+                Alert.alert("Invalid OTP", "Please enter the 6-digit code.");
+            }
             return;
         }
 
@@ -89,9 +105,17 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
             setShowOtpModal(false);
             setStep(3);
-            Alert.alert("Success", "Phone Verified!");
+            if (Platform.OS === 'web') {
+                window.alert("Phone Verified!");
+            } else {
+                Alert.alert("Success", "Phone Verified!");
+            }
         } catch (error) {
-            Alert.alert("Verification Failed", error.message);
+            if (Platform.OS === 'web') {
+                window.alert(`Verification Failed: ${error.message}`);
+            } else {
+                Alert.alert("Verification Failed", error.message);
+            }
         } finally {
             setIsLoadingOtp(false);
         }
@@ -126,7 +150,11 @@ const GymOwnerSignupScreen = ({ navigation }) => {
 
     const handleRegisterBranch = async () => {
         if (!formData.gymName || !formData.city || !formData.country) {
-            Alert.alert('Missing Fields', 'Gym Name, City, and Country are required.');
+            if (Platform.OS === 'web') {
+                window.alert('Gym Name, City, and Country are required.');
+            } else {
+                Alert.alert('Missing Fields', 'Gym Name, City, and Country are required.');
+            }
             return;
         }
 
@@ -151,7 +179,11 @@ const GymOwnerSignupScreen = ({ navigation }) => {
             setGeneratedGymCode(branchRes.branch.gym_code);
             setStep(4);
         } catch (err) {
-            Alert.alert('Error', `Failed to create branch: ${err.message}`);
+            if (Platform.OS === 'web') {
+                window.alert(`Failed to create branch: ${err.message}`);
+            } else {
+                Alert.alert('Error', `Failed to create branch: ${err.message}`);
+            }
         } finally {
             setLoading(false);
         }
@@ -181,7 +213,7 @@ const GymOwnerSignupScreen = ({ navigation }) => {
                 onChangeText={(t) => setFormData({ ...formData, fullName: t })}
             />
 
-            <Text style={styles.label}>Email (Optional)</Text>
+            <Text style={styles.label}>Email Address <Text style={styles.req}>*</Text></Text>
             <TextInput
                 style={styles.input}
                 placeholder="john@example.com"

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
 console.log("Diet Function Up!");
@@ -19,25 +19,15 @@ serve(async (req) => {
         );
 
         const token = authHeader.replace('Bearer ', '');
-        // Verify Firebase Token
-        const googleRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${Deno.env.get('FIREBASE_API_KEY')}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken: token })
-        });
-        const googleData = await googleRes.json();
-        if (!googleData.users) throw new Error("Unauthorized");
-        const firebaseUid = googleData.users[0].localId;
 
-        // Get User ID
-        const { data: userMap } = await supabaseClient
-            .from('app_users')
-            .select('id')
-            .eq('firebase_uid', firebaseUid)
-            .single();
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
-        if (!userMap) throw new Error("User not found in database.");
-        const userId = userMap.id;
+        if (authError || !user) {
+            console.error("Auth error:", authError);
+            throw new Error("Unauthorized");
+        }
+
+        const userId = user.id;
 
         const url = new URL(req.url);
         // Path logic might be 'diet/log' so we check path suffix or query params

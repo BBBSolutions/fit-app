@@ -12,16 +12,18 @@ CREATE TABLE IF NOT EXISTS public.owners (
 
 ALTER TABLE public.owners ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Owners can view their own record" ON public.owners;
 CREATE POLICY "Owners can view their own record" ON public.owners
     FOR SELECT USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Owners can update their own record" ON public.owners;
 CREATE POLICY "Owners can update their own record" ON public.owners
     FOR UPDATE USING (auth.uid() = id);
 
 -- 2. BRANCHES TABLE
 -- Stores individual gym locations.
 CREATE TABLE IF NOT EXISTS public.branches (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_id UUID REFERENCES public.owners(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     city TEXT,
@@ -35,16 +37,26 @@ CREATE TABLE IF NOT EXISTS public.branches (
 
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Owners can view/manage their branches" ON public.branches;
 CREATE POLICY "Owners can view/manage their branches" ON public.branches
     FOR ALL USING (auth.uid() = owner_id);
 
 -- 3. BRANCH USERS TABLE (Multi-tenancy mapping)
 -- Links a user (staff, member, trainer) to a specific branch.
-CREATE TYPE public.branch_role_enum AS ENUM ('owner', 'branch_admin', 'reception', 'trainer', 'member');
-CREATE TYPE public.branch_user_status_enum AS ENUM ('active', 'pending', 'suspended');
+DO $$ BEGIN
+    CREATE TYPE public.branch_role_enum AS ENUM ('owner', 'branch_admin', 'reception', 'trainer', 'member');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.branch_user_status_enum AS ENUM ('active', 'pending', 'suspended');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.branch_users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     branch_id UUID REFERENCES public.branches(id) ON DELETE CASCADE,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     role public.branch_role_enum NOT NULL DEFAULT 'member',
@@ -57,12 +69,14 @@ CREATE TABLE IF NOT EXISTS public.branch_users (
 ALTER TABLE public.branch_users ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Owners can view everyone in their branches
+DROP POLICY IF EXISTS "Owners can view branch users" ON public.branch_users;
 CREATE POLICY "Owners can view branch users" ON public.branch_users
     FOR SELECT USING (
         branch_id IN (SELECT id FROM public.branches WHERE owner_id = auth.uid())
     );
 
 -- Policy: Branch Admins can view everyone in their branch
+DROP POLICY IF EXISTS "Branch Admins can view branch users" ON public.branch_users;
 CREATE POLICY "Branch Admins can view branch users" ON public.branch_users
     FOR SELECT USING (
         EXISTS (
@@ -74,10 +88,17 @@ CREATE POLICY "Branch Admins can view branch users" ON public.branch_users
     );
 
 -- Policy: Users can view their own branch association
+DROP POLICY IF EXISTS "Users can view self" ON public.branch_users;
 CREATE POLICY "Users can view self" ON public.branch_users
     FOR SELECT USING (user_id = auth.uid());
 
 -- Triggers for updated_at
+-- Triggers for updated_at
+DROP TRIGGER IF EXISTS handle_owners_updated_at ON public.owners;
 CREATE TRIGGER handle_owners_updated_at BEFORE UPDATE ON public.owners FOR EACH ROW EXECUTE PROCEDURE moddatetime (updated_at);
+
+DROP TRIGGER IF EXISTS handle_branches_updated_at ON public.branches;
 CREATE TRIGGER handle_branches_updated_at BEFORE UPDATE ON public.branches FOR EACH ROW EXECUTE PROCEDURE moddatetime (updated_at);
+
+DROP TRIGGER IF EXISTS handle_branch_users_updated_at ON public.branch_users;
 CREATE TRIGGER handle_branch_users_updated_at BEFORE UPDATE ON public.branch_users FOR EACH ROW EXECUTE PROCEDURE moddatetime (updated_at);

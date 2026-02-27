@@ -53,7 +53,35 @@ serve(async (req) => {
             }, {});
 
             if (clientIds.length === 0) {
-                return new Response(JSON.stringify([]), {
+                // Fallback: Check profiles for directly assigned users (legacy/migration support)
+                const { data: profileClients, error: profileFallbackError } = await supabaseClient
+                    .from('profiles')
+                    .select('*')
+                    .eq('assigned_trainer_id', trainerId);
+
+                if (profileFallbackError) {
+                    console.error("Error fetching fallback profiles:", profileFallbackError);
+                }
+
+                if (!profileClients || profileClients.length === 0) {
+                    return new Response(JSON.stringify([]), {
+                        headers: { ...corsHeaders, "Content-Type": "application/json" }
+                    });
+                }
+
+                // Return mapped fallback clients
+                const mappedFallback = profileClients.map(p => ({
+                    id: p.user_id,
+                    name: p.full_name || p.name || 'Unknown',
+                    goal: p.goal,
+                    status: 'Active', // Assumed active if assigned
+                    image: p.avatar_url,
+                    lastActive: p.updated_at || 'Unknown',
+                    age: p.age || 'N/A',
+                    plan: 'None'
+                }));
+
+                return new Response(JSON.stringify(mappedFallback), {
                     headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
             }

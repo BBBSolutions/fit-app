@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { supabase } from '../../config/supabaseAuth';
 import { useFocusEffect, CommonActions } from '@react-navigation/native';
 
 const ProfileScreen = ({ navigation }) => {
@@ -49,18 +50,25 @@ const ProfileScreen = ({ navigation }) => {
         navigation.navigate('OnboardingSurvey', { isEditMode: true, existingData: userData });
     };
 
-    const handleChangePassword = () => {
-        const { getAuth, sendPasswordResetEmail } = require('firebase/auth');
-        const auth = getAuth();
-        if (auth.currentUser && auth.currentUser.email) {
-            sendPasswordResetEmail(auth, auth.currentUser.email)
-                .then(() => {
-                    alert("Password reset email sent!");
-                })
-                .catch((error) => {
-                    console.error("Password Reset Error", error);
-                    alert("Error: " + error.message);
-                });
+    const handleChangePassword = async () => {
+        // Use Supabase Password Reset
+        // We need the email. If it's not in userData, we might need to fetch it or use the session user.
+        // Assuming userData might have it if getProfile returned it. If not, try supabase.auth.getUser()
+
+        let email = userData.email;
+        if (!email) {
+            const { data: { user } } = await supabase.auth.getUser();
+            email = user?.email;
+        }
+
+        if (email) {
+            const { error } = await supabase.auth.resetPasswordForEmail(email);
+            if (error) {
+                console.error("Password Reset Error", error);
+                alert("Error: " + error.message);
+            } else {
+                alert("Password reset email sent!");
+            }
         } else {
             alert("No email found for user.");
         }
@@ -101,15 +109,16 @@ const ProfileScreen = ({ navigation }) => {
     };
 
     const handleLogout = async () => {
-        const { getAuth, signOut } = require('firebase/auth');
-        const auth = getAuth();
         try {
-            await signOut(auth);
+            await supabase.auth.signOut();
+            // Also clear any custom tokens if used
+            await api.removeCustomToken();
+
             // Ensure navigation state is reset
             navigation.dispatch(
                 CommonActions.reset({
                     index: 0,
-                    routes: [{ name: 'MemberLogin' }], // Or LoginScreen if that's the root
+                    routes: [{ name: 'MemberLogin' }],
                 })
             );
         } catch (e) {

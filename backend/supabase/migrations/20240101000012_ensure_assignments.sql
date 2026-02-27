@@ -1,7 +1,7 @@
 -- Ensure workout_assignments table exists with correct schema
 
 CREATE TABLE IF NOT EXISTS public.workout_assignments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trainer_id UUID REFERENCES public.app_users(id) ON DELETE CASCADE,
     client_id UUID REFERENCES public.app_users(id) ON DELETE CASCADE,
     workout_id UUID REFERENCES public.workouts(id) ON DELETE CASCADE,
@@ -18,13 +18,13 @@ ALTER TABLE public.workout_assignments ENABLE ROW LEVEL SECURITY;
 -- Policies (Re-create to be safe)
 DROP POLICY IF EXISTS "Users can view own assignments" ON public.workout_assignments;
 CREATE POLICY "Users can view own assignments" ON public.workout_assignments
-    FOR SELECT USING (client_id IN (SELECT id FROM public.app_users WHERE firebase_uid = auth.uid()::text) OR trainer_id IN (SELECT id FROM public.app_users WHERE firebase_uid = auth.uid()::text));
+    FOR SELECT USING (client_id = auth.uid() OR trainer_id = auth.uid());
 
 DROP POLICY IF EXISTS "Trainers can manage assignments" ON public.workout_assignments;
 CREATE POLICY "Trainers can manage assignments" ON public.workout_assignments
-    FOR ALL USING (trainer_id IN (SELECT id FROM public.app_users WHERE firebase_uid = auth.uid()::text));
+    FOR ALL USING (trainer_id = auth.uid());
 
 -- Allow self-assignment (Important for Custom Workouts)
 DROP POLICY IF EXISTS "Users can assign to themselves" ON public.workout_assignments;
 CREATE POLICY "Users can assign to themselves" ON public.workout_assignments
-    FOR INSERT WITH CHECK (client_id IN (SELECT id FROM public.app_users WHERE firebase_uid = auth.uid()::text) AND trainer_id IN (SELECT id FROM public.app_users WHERE firebase_uid = auth.uid()::text));
+    FOR INSERT WITH CHECK (client_id = auth.uid() AND trainer_id = auth.uid());

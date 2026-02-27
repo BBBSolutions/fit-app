@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, ActivityIndicator, Alert, useWindowDimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { adminApi } from '../../services/adminApi';
+import AdminDrawer from '../../components/AdminDrawer';
 
 const AdminLeadManagementScreen = ({ navigation, route }) => {
-    const { branchId } = route.params || {}; // Get branchId from navigation params
+    const { branchId, gymCode, branchName } = route.params || {}; // Get branchId from navigation params
     const [selectedLead, setSelectedLead] = useState(null);
     const [detailsPanelVisible, setDetailsPanelVisible] = useState(false);
     const [addLeadModalVisible, setAddLeadModalVisible] = useState(false);
@@ -29,10 +30,17 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
     // New Lead State
     const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', source: 'Website', status: 'New', notes: '', address: '' });
 
+    // Drawer State
+    const [drawerVisible, setDrawerVisible] = useState(false);
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
+
     useEffect(() => {
-        fetchLeads();
-        fetchTrainers();
-    }, []);
+        if (branchId) {
+            fetchLeads();
+            fetchTrainers();
+        }
+    }, [branchId]);
 
     const fetchLeads = async () => {
         setIsLoading(true);
@@ -145,6 +153,7 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
     const handleConvertToMember = () => {
         setDetailsPanelVisible(false);
         navigation.navigate('AdminUserOnboarding', {
+            branchId, gymCode, branchName,
             prefill: {
                 name: selectedLead.name,
                 phone: selectedLead.phone,
@@ -191,12 +200,64 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
+            <AdminDrawer
+                visible={drawerVisible}
+                onClose={() => setDrawerVisible(false)}
+                navigation={navigation}
+                currentScreen="AdminLeadManagement"
+                extraParams={{ branchId, gymCode, branchName }}
+            />
+
+            {/* Sidebar - Desktop Only */}
+            {!isMobile && (
+                <View style={styles.sidebar}>
+                    <View style={styles.sidebarHeader}>
+                        <Ionicons name="fitness" size={32} color="#3182CE" />
+                        <Text style={styles.sidebarTitle}>FitPlatform</Text>
+                    </View>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode, branchName })}>
+                        <Ionicons name="grid-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Dashboard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItemActive}>
+                        <Ionicons name="funnel-outline" size={20} color="#3182CE" />
+                        <Text style={styles.sidebarItemTextActive}>Leads</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode, branchName })}>
+                        <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Branding</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode, branchName })}>
+                        <Ionicons name="people-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Users</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode, branchName })}>
+                        <Ionicons name="card-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Billing</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode, branchName })}>
+                        <Ionicons name="settings-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Settings</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
             <ScrollView style={styles.mainContent}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <View>
-                        <Text style={styles.pageTitle}>Lead Management</Text>
-                        <Text style={styles.pageSubtitle}>Track inquiries, manage demos, and convert leads.</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isMobile && (
+                            <TouchableOpacity
+                                onPress={() => setDrawerVisible(true)}
+                                style={styles.hamburgerButton}
+                            >
+                                <Ionicons name="menu" size={28} color="#2D3748" />
+                            </TouchableOpacity>
+                        )}
+                        <View>
+                            <Text style={styles.pageTitle}>Lead Management</Text>
+                            <Text style={styles.pageSubtitle}>Track inquiries, manage demos, and convert leads.</Text>
+                        </View>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 12 }}>
                         <TouchableOpacity style={styles.outlineButton} onPress={fetchLeads}>
@@ -524,7 +585,16 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F7FAFC' },
+    container: { flex: 1, flexDirection: 'row', backgroundColor: '#F7FAFC' },
+    sidebar: { width: 250, backgroundColor: '#FFF', borderRightWidth: 1, borderRightColor: '#E2E8F0', paddingVertical: 24, paddingHorizontal: 16 },
+    sidebarHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 40, paddingHorizontal: 8 },
+    sidebarTitle: { fontSize: 20, fontWeight: 'bold', color: '#2D3748', marginLeft: 10 },
+    sidebarItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 4 },
+    sidebarItemActive: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 4, backgroundColor: '#EBF8FF' },
+    sidebarItemText: { fontSize: 16, color: '#4A5568', marginLeft: 12 },
+    sidebarItemTextActive: { fontSize: 16, color: '#3182CE', marginLeft: 12, fontWeight: '600' },
+    hamburgerButton: { padding: 8, marginRight: 8 },
+
     mainContent: { flex: 1, padding: 24 },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
     pageTitle: { fontSize: 28, fontWeight: 'bold', color: '#1A202C', marginBottom: 4 },

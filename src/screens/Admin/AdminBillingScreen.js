@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, Platform, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Switch, Platform, ActivityIndicator, Alert, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { adminApi } from '../../services/adminApi';
-
-const { width } = Dimensions.get('window');
-const isWeb = Platform.OS === 'web';
+import AdminDrawer from '../../components/AdminDrawer';
 
 const AdminBillingScreen = ({ navigation, route }) => {
-    const { branchId } = route.params || {}; // Get branchId from navigation params
+    const { branchId, gymCode, branchName } = route.params || {}; // Get branchId from navigation params
     // State
     const [plans, setPlans] = useState([]);
     const [subscriptions, setSubscriptions] = useState([]);
@@ -20,6 +18,11 @@ const AdminBillingScreen = ({ navigation, route }) => {
 
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Sidebar State
+    const [drawerVisible, setDrawerVisible] = useState(false);
+    const { width } = useWindowDimensions();
+    const isMobile = width < 768;
 
     useFocusEffect(
         React.useCallback(() => {
@@ -176,17 +179,65 @@ const AdminBillingScreen = ({ navigation, route }) => {
 
     return (
         <View style={styles.container}>
-            {/* Sidebar check removed - assuming managed by parent navigator or responsive layout handles it elsewhere
-               But keeping container/layout structure similar to existing file
-            */}
+            <AdminDrawer
+                visible={drawerVisible}
+                onClose={() => setDrawerVisible(false)}
+                navigation={navigation}
+                currentScreen="AdminBilling"
+                extraParams={{ branchId, gymCode, branchName }}
+            />
+
+            {/* Sidebar - Desktop Only */}
+            {!isMobile && (
+                <View style={styles.sidebar}>
+                    <View style={styles.sidebarHeader}>
+                        <Ionicons name="fitness" size={32} color="#3182CE" />
+                        <Text style={styles.sidebarTitle}>FitPlatform</Text>
+                    </View>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminDashboard', { branchId, gymCode, branchName })}>
+                        <Ionicons name="grid-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Dashboard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminLeadManagement', { branchId, gymCode, branchName })}>
+                        <Ionicons name="funnel-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Leads</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBranding', { branchId, gymCode, branchName })}>
+                        <Ionicons name="color-palette-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Branding</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminUserOnboarding', { branchId, gymCode, branchName })}>
+                        <Ionicons name="people-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Users</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItemActive}>
+                        <Ionicons name="card-outline" size={20} color="#3182CE" />
+                        <Text style={styles.sidebarItemTextActive}>Billing</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode, branchName })}>
+                        <Ionicons name="settings-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Settings</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={styles.mainContent}>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     {/* Header */}
                     <View style={styles.header}>
-                        <View>
-                            <Text style={styles.pageTitle}>Billing & Subscription Management</Text>
-                            <Text style={styles.pageSubtitle}>Configure membership plans, manage payments, and track billing activity.</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            {isMobile && (
+                                <TouchableOpacity
+                                    onPress={() => setDrawerVisible(true)}
+                                    style={styles.hamburgerButton}
+                                >
+                                    <Ionicons name="menu" size={28} color="#2D3748" />
+                                </TouchableOpacity>
+                            )}
+                            <View>
+                                <Text style={styles.pageTitle}>Billing & Subscription Management</Text>
+                                <Text style={styles.pageSubtitle}>Configure membership plans, manage payments, and track billing activity.</Text>
+                            </View>
                         </View>
                         <View style={{ flexDirection: 'row', gap: 12 }}>
                             <TouchableOpacity style={styles.outlineButton} onPress={fetchData}>
@@ -413,9 +464,10 @@ const styles = StyleSheet.create({
     sidebarHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 40, paddingHorizontal: 8 },
     sidebarTitle: { fontSize: 20, fontWeight: 'bold', color: '#2D3748', marginLeft: 10 },
     sidebarItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 4 },
-    sidebarItemActive: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 4, backgroundColor: '#FAF5FF' },
+    sidebarItemActive: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 4, backgroundColor: '#EBF8FF' },
     sidebarItemText: { fontSize: 16, color: '#4A5568', marginLeft: 12 },
-    sidebarItemTextActive: { fontSize: 16, color: '#553C9A', marginLeft: 12, fontWeight: '600' },
+    sidebarItemTextActive: { fontSize: 16, color: '#3182CE', marginLeft: 12, fontWeight: '600' },
+    hamburgerButton: { padding: 8, marginRight: 8 },
 
     mainContent: { flex: 1 },
     scrollContent: { padding: 32, paddingBottom: 100 },

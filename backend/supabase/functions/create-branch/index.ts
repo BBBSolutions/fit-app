@@ -1,9 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { verify } from "https://deno.land/x/djwt@v2.8/mod.ts";
-
-const CUSTOM_JWT_SECRET = Deno.env.get("CUSTOM_JWT_SECRET") ?? "";
-
+const CUSTOM_JWT_SECRET = Deno.env.get("CUSTOM_JWT_SECRET") ?? "SUPER_SECRET_FALLBACK";
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -23,9 +21,11 @@ serve(async (req) => {
 
     try {
         // Use Service Role for admin actions
+        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        console.log("Service Key length:", serviceKey.length);
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            serviceKey
         );
 
         const body = await req.json();
@@ -40,22 +40,42 @@ serve(async (req) => {
 
         const token = authHeader.replace('Bearer ', '');
 
-        if (!CUSTOM_JWT_SECRET) {
-            throw new Error('Server Config Error: Missing JWT Secret');
+        let userId = null;
+        let authError = null;
+
+        // Try Supabase Auth First
+        const userClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+            { global: { headers: { Authorization: `Bearer ${token}` } } }
+        );
+        const { data: { user }, error: sbError } = await userClient.auth.getUser();
+
+        if (user && !sbError) {
+            userId = user.id;
+        } else {
+            // Fallback to Custom JWT
+            try {
+                if (!CUSTOM_JWT_SECRET) {
+                    throw new Error('Server Config Error: Missing JWT Secret');
+                }
+                const key = await crypto.subtle.importKey(
+                    "raw",
+                    new TextEncoder().encode(CUSTOM_JWT_SECRET),
+                    { name: "HMAC", hash: "SHA-256" },
+                    false,
+                    ["verify"]
+                );
+                const payload = await verify(token, key);
+                if (payload && payload.sub) {
+                    userId = payload.sub as string;
+                }
+            } catch (err) {
+                authError = err;
+            }
         }
 
-        const key = await crypto.subtle.importKey(
-            "raw",
-            new TextEncoder().encode(CUSTOM_JWT_SECRET),
-            { name: "HMAC", hash: "SHA-256" },
-            false,
-            ["verify"]
-        );
-
-        const payload = await verify(token, key);
-        const userId = payload.sub;
-
-        if (!userId) throw new Error('Invalid Token: Missing user ID');
+        if (!userId) throw new Error(`Invalid Token: ${authError?.message || sbError?.message || 'Missing user ID'}`);
 
         // 2. Ensure Owner Exists in 'public.owners'
         // We received fullName, email, phone from the body now.
@@ -69,22 +89,48 @@ serve(async (req) => {
 
         if (!existingOwner) {
             console.log("Owner record missing, creating...");
-            // We need name and email.
-            if (!fullName || !email) {
-                // Should we error? Or try to use metadata?
-                // Frontend is now sending it. 
-                // Fallback: use placeholders if critical to proceed? No, better error.
-                if (!fullName) throw new Error("Missing Owner Name for registration");
-                // Email is unique in owners table, so we must provide it.
+
+            let finalName = fullName;
+            let finalEmail = email;
+            let finalPhone = phone;
+
+            // Fallback: Fetch from Auth / Profiles if missing
+            if (!finalName || !finalEmail) {
+                console.log("Owner details missing in body, fetching from Auth/Profiles...");
+
+                // 1. Fetch from Auth
+                const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+                if (!userError && userData && userData.user) {
+                    finalEmail = finalEmail || userData.user.email;
+                    finalPhone = finalPhone || userData.user.phone;
+                    // Try metadata for name
+                    finalName = finalName || userData.user.user_metadata?.full_name || userData.user.user_metadata?.name;
+                }
+
+                // 2. Fetch from Profiles (if name still missing)
+                if (!finalName) {
+                    const { data: profile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('name')
+                        .eq('user_id', userId)
+                        .single();
+
+                    if (profile) {
+                        finalName = profile.name;
+                    }
+                }
             }
+
+            if (!finalName) throw new Error("Missing Owner Name. Please update your profile or provide name.");
+            if (!finalEmail) throw new Error("Missing Owner Email.");
 
             const { error: ownerError } = await supabaseAdmin
                 .from('owners')
                 .insert({
                     id: userId,
-                    name: fullName,
-                    email: email || `owner_${userId}@example.com`, // Fallback only if absolutely needed
-                    phone: phone,
+                    name: finalName,
+                    email: finalEmail,
+                    phone: finalPhone,
                     business_name: gymName
                 });
 
@@ -154,8 +200,12 @@ serve(async (req) => {
 
     } catch (error) {
         console.error("Create Branch Error:", error);
+
+        let skLength = -1;
+        try { skLength = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').length; } catch (e) { }
+
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({ error: error.message, __debug_sk_length: skLength }),
             {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,

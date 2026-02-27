@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Button, Alert, TouchableOpacity, Platform } from 'react-native';
 import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
 import { adminApi } from '../../services/adminApi';
@@ -16,7 +16,11 @@ const MemberLoginScreen = ({ navigation, route }) => {
 
   const handleSendOtp = async () => {
     if (phoneNumber.trim() === '') {
-      Alert.alert('Error', 'Please enter a phone number');
+      if (Platform.OS === 'web') {
+        window.alert('Please enter a phone number');
+      } else {
+        Alert.alert('Error', 'Please enter a phone number');
+      }
       return;
     }
 
@@ -34,7 +38,11 @@ const MemberLoginScreen = ({ navigation, route }) => {
       }
     } catch (err) {
       console.error("OTP Error:", err);
-      Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+      if (Platform.OS === 'web') {
+        window.alert(`Failed to send OTP: ${err.message}`);
+      } else {
+        Alert.alert('Error', `Failed to send OTP: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -42,7 +50,11 @@ const MemberLoginScreen = ({ navigation, route }) => {
 
   const handleVerifyOtp = async () => {
     if (verificationCode.trim() === '') {
-      Alert.alert('Error', 'Please enter the OTP');
+      if (Platform.OS === 'web') {
+        window.alert('Please enter the OTP');
+      } else {
+        Alert.alert('Error', 'Please enter the OTP');
+      }
       return;
     }
 
@@ -85,27 +97,27 @@ const MemberLoginScreen = ({ navigation, route }) => {
           // If created by Admin, they might have Name but no Goal.
           // Send to Onboarding to finish setup?
           // For now, yes, send to OnboardingSurvey to complete profile.
-          navigation.replace('OnboardingSurvey');
+          navigation.replace('OnboardingSurvey', { existingData: profile });
         }
       } catch (e) {
         console.log("Profile check failed, going to onboarding");
-        navigation.replace('OnboardingSurvey');
+        navigation.replace('OnboardingSurvey', { existingData: null });
       }
 
     } catch (err) {
       console.error("Verification Error:", err);
-      Alert.alert('Error', `Invalid OTP: ${err.message}`);
+      if (Platform.OS === 'web') {
+        window.alert(`Invalid OTP: ${err.message}`);
+      } else {
+        Alert.alert('Error', `Invalid OTP: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // Dev Helper
-  const handleGuestLogin = () => {
-    const { signInAnonymously } = require('firebase/auth');
-    // ... Legacy or Dev logic can stay if needed, simplified here
-    Alert.alert("Notice", "Guest login deprecated for Msg91 flow.");
-  };
+  // Guest login removed (Firebase legacy)
 
   return (
     <View style={styles.container}>

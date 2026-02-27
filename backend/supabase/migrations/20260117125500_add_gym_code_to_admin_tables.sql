@@ -2,15 +2,15 @@
 
 -- LEADS
 ALTER TABLE public.leads 
-ADD COLUMN gym_code TEXT;
+ADD COLUMN IF NOT EXISTS gym_code TEXT;
 
 -- CONTENT
 ALTER TABLE public.content 
-ADD COLUMN gym_code TEXT;
+ADD COLUMN IF NOT EXISTS gym_code TEXT;
 
 -- PLANS
 ALTER TABLE public.plans 
-ADD COLUMN gym_code TEXT;
+ADD COLUMN IF NOT EXISTS gym_code TEXT;
 
 -- Update Policies to restrict access by gym_code (Optional but recommended)
 -- For now, the application logic (Edge Functions) will handle the filtering by gym_code.

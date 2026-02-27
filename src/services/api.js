@@ -29,6 +29,21 @@ const getHeaders = async () => {
 
 
 export const api = {
+    // Gym Code Verification
+    verifyGymCode: async (gymCode) => {
+        try {
+            const { data, error } = await supabase.rpc('is_valid_gym_code', { p_gym_code: gymCode });
+            if (error) {
+                console.error("verifyGymCode RPC error:", error.message);
+                return false;
+            }
+            return !!data;
+        } catch (error) {
+            console.error("verifyGymCode exception:", error);
+            return false;
+        }
+    },
+
     // Auth
     authVerify: async (token) => {
         console.log("Verify Token called with:", token ? token.substring(0, 10) + "..." : "null");
@@ -79,6 +94,9 @@ export const api = {
             transformedData[camelKey] = data[key];
         });
         if (transformedData.goal) transformedData.primaryGoal = transformedData.goal;
+        if (!transformedData.name && transformedData.fullName) {
+            transformedData.name = transformedData.fullName;
+        }
         console.log("API: getProfile (Self) result:", transformedData);
         return transformedData;
     },
@@ -556,7 +574,12 @@ export const api = {
 
         if (!response.ok) {
             const txt = await response.text();
-            throw new Error(txt || 'Failed to send WhatsApp OTP');
+            let errorMessage = txt;
+            try {
+                const errObj = JSON.parse(txt);
+                if (errObj.error) errorMessage = errObj.error;
+            } catch (e) { }
+            throw new Error(errorMessage || 'Failed to send WhatsApp OTP');
         }
         return response.json();
     },
@@ -576,7 +599,12 @@ export const api = {
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(errText || 'OTP Verification Failed');
+            let errorMessage = errText;
+            try {
+                const errObj = JSON.parse(errText);
+                if (errObj.error) errorMessage = errObj.error;
+            } catch (e) { }
+            throw new Error(errorMessage || 'OTP Verification Failed');
         }
         return response.json();
     }

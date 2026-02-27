@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { supabase } from '../../config/supabaseAuth';
 
 // UI Components
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -54,10 +55,11 @@ const TrainerOnboardingSurveyScreen = ({ navigation }) => {
     const loadExistingProfile = async () => {
         try {
             setLoading(true);
-            const { getAuth } = require('firebase/auth');
-            const auth = getAuth();
-            const currentUser = auth.currentUser;
-            const loginPhoneNumber = currentUser?.phoneNumber || '';
+            setLoading(true);
+
+            // Get current user from Supabase
+            const { data: { user } } = await supabase.auth.getUser();
+            const loginPhoneNumber = user?.phone || '';
 
             const profile = await api.getProfile();
             if (profile) {
