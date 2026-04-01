@@ -87,6 +87,14 @@ serve(async (req) => {
                 profile.trainer_id = trainerRelations[0].trainer_id;
             }
 
+            // Fetch user roles from branch_users
+            const { data: branchUserRoles } = await supabaseClient
+                .from('branch_users')
+                .select('role')
+                .eq('user_id', targetId);
+
+            profile.roles = branchUserRoles ? branchUserRoles.map(r => r.role) : [];
+
             return new Response(JSON.stringify(profile), {
                 headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
@@ -94,8 +102,10 @@ serve(async (req) => {
 
         if (path === 'update' || req.method === 'POST' || req.method === 'PUT') {
             const updates = await req.json();
-            // Prevent updating user_id
+            // Prevent updating read-only or dynamic fields
             delete updates.user_id;
+            delete updates.roles;
+            delete updates.trainer_id;
 
             console.log("Upserting profile for:", userId, "Data:", JSON.stringify(updates));
 

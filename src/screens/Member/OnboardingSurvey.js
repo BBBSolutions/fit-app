@@ -8,7 +8,12 @@ import {
     TouchableOpacity,
     Alert,
     SafeAreaView,
+    Image,
+    ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '../../config/supabaseAuth';
 import { api } from '../../services/api';
 
 const OnboardingSurvey = ({ navigation, route }) => {
@@ -37,8 +42,11 @@ const OnboardingSurvey = ({ navigation, route }) => {
         workoutLocation: existingData?.workoutLocation || '',
         trainingStyle: existingData?.trainingStyle || '',
         exercisesToAvoid: existingData?.exercisesToAvoid || '',
-        planType: existingData?.planType || '',
+        planType: existingData?.planType || 'Free',
+        avatar_url: existingData?.avatarUrl || existingData?.avatar_url || '',
     });
+
+    const [uploadingImage, setUploadingImage] = useState(false);
 
     useEffect(() => {
         // If we didn't get existingData from navigation params, try to fetch it
@@ -76,6 +84,7 @@ const OnboardingSurvey = ({ navigation, route }) => {
                     trainingStyle: profile.trainingStyle || prev.trainingStyle,
                     exercisesToAvoid: profile.exercisesToAvoid || prev.exercisesToAvoid,
                     planType: profile.planType || prev.planType,
+                    avatar_url: profile.avatarUrl || profile.avatar_url || prev.avatar_url,
                 }));
             }
         } catch (error) {
@@ -141,6 +150,68 @@ const OnboardingSurvey = ({ navigation, route }) => {
         </View>
     );
 
+    const handlePickImage = async () => {
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+                return;
+            }
+
+            let result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.5,
+                base64: true,
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const asset = result.assets[0];
+                await uploadImage(asset);
+            }
+        } catch (error) {
+            console.error("Error picking image:", error);
+            Alert.alert('Error', 'Could not pick the image.');
+        }
+    };
+
+    const uploadImage = async (asset) => {
+        try {
+            setUploadingImage(true);
+            const fileName = asset.fileName || `avatar-${Date.now()}.jpg`;
+            const fileType = asset.mimeType || 'image/jpeg';
+            
+            const { uploadUrl, path } = await api.getUploadUrl('user-media-public', fileName, fileType);
+            
+            const response = await fetch(asset.uri);
+            const blob = await response.blob();
+            
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: {
+                    'Content-Type': fileType,
+                },
+            });
+
+            if (!uploadRes.ok) {
+                throw new Error('Failed to upload image to storage');
+            }
+
+            const { data: { publicUrl } } = supabase.storage.from('user-media-public').getPublicUrl(path);
+
+            updateField('avatar_url', publicUrl);
+            Alert.alert("Success", "Profile picture attached!");
+
+        } catch (error) {
+            console.error("Upload Error:", error);
+            Alert.alert("Error", "Could not upload profile picture.");
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -152,6 +223,22 @@ const OnboardingSurvey = ({ navigation, route }) => {
                 {/* 1. Basic Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>1. Basic Information</Text>
+
+                     <View style={styles.avatarContainer}>
+                        <TouchableOpacity style={styles.avatarButton} onPress={handlePickImage} disabled={uploadingImage}>
+                            {formData.avatar_url ? (
+                                <Image source={{ uri: formData.avatar_url }} style={styles.avatarImage} />
+                            ) : (
+                                <Ionicons name="camera" size={30} color="#3182CE" />
+                            )}
+                            {uploadingImage && (
+                                <View style={styles.uploadingOverlay}>
+                                    <ActivityIndicator color="#FFFFFF" />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                        <Text style={styles.avatarLabel}>{formData.avatar_url ? 'Change Photo' : 'Add Photo'}</Text>
+                    </View>
 
                     <Text style={styles.label}>Name</Text>
                     <TextInput
@@ -397,22 +484,6 @@ const OnboardingSurvey = ({ navigation, route }) => {
                         <Text style={styles.planTitle}>Free Plan</Text>
                         <Text style={styles.planDesc}>Manual plan creation.</Text>
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[
-                            styles.planCard,
-                            formData.planType === 'AI' && styles.planCardActive,
-                        ]}
-                        onPress={() => updateField('planType', 'AI')}
-                    >
-                        <View style={styles.rowBetween}>
-                            <Text style={styles.planTitle}>AI-Generated Plan</Text>
-                            <Text style={styles.paidBadge}>PAID</Text>
-                        </View>
-                        <Text style={styles.planDesc}>
-                            Personalized plan based on your data.
-                        </Text>
-                    </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
@@ -478,6 +549,37 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
         borderRadius: 12,
         overflow: 'hidden',
+    },
+    avatarContainer: {
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    avatarButton: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#EBF8FF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        borderWidth: 2,
+        borderColor: '#3182CE',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarLabel: {
+        marginTop: 8,
+        fontSize: 14,
+        color: '#4A5568',
+        fontWeight: '600',
     },
     label: {
         fontSize: 14,

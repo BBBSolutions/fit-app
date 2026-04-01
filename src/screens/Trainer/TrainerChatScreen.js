@@ -23,11 +23,61 @@ const TrainerChatScreen = ({ navigation }) => {
     const loadClients = async () => {
         try {
             setLoading(true);
-            const data = await api.getClients();
-            // Data format: { id, name, image, ... }
-            setClients(data);
+            let combinedChats = [];
+
+            // 1. Fetch assigned clients
+            try {
+                const data = await api.getClients();
+                if (Array.isArray(data)) {
+                    data.forEach(client => {
+                        combinedChats.push({ 
+                            ...client,
+                            user_id: client.user_id || client.id,
+                            role: 'member', // ensure we know they are a standard client
+                            unread_count: 0,
+                            last_message_time: new Date(0).toISOString()
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to load assigned clients:", error);
+            }
+
+            // 2. Fetch specific threads (e.g. from Admin or branch staff)
+            try {
+                const threads = await api.getChatThreads();
+                if (Array.isArray(threads)) {
+                    threads.forEach(t => {
+                        // Check if it's already an assigned client
+                        const existingClientInfo = combinedChats.find(c => c.user_id === t.user_id || c.id === t.user_id);
+                        if (existingClientInfo) {
+                            existingClientInfo.unread_count = t.unread_count || 0;
+                            existingClientInfo.last_message_time = t.last_message_time || existingClientInfo.last_message_time;
+                        } else {
+                            // Avoid duplicates if a client is also returned in threads
+                            combinedChats.push({
+                                id: t.user_id,
+                                user_id: t.user_id,
+                                name: t.name || t.full_name || 'Admin',
+                                role: t.role || 'user',
+                                unread_count: t.unread_count || 0,
+                                last_message_time: t.last_message_time || new Date(0).toISOString()
+                            });
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn("Could not fetch threads, using fallback.");
+            }
+
+            // Sort by last message time (newest first)
+            combinedChats.sort((a, b) => {
+                return new Date(b.last_message_time || 0) - new Date(a.last_message_time || 0);
+            });
+
+            setClients(combinedChats);
         } catch (error) {
-            console.error("Failed to load clients:", error);
+            console.error("Failed to load clients/chats:", error);
         } finally {
             setLoading(false);
         }
@@ -53,19 +103,33 @@ const TrainerChatScreen = ({ navigation }) => {
         });
     };
 
-    const renderClientItem = ({ item }) => (
-        <TouchableOpacity style={styles.clientCard} onPress={() => handleClientPress(item)}>
-            <Image
-                source={{ uri: item.image || item.avatar_url }}
-                style={styles.avatar}
-            />
-            <View style={styles.clientInfo}>
-                <Text style={styles.clientName}>{item.name || item.full_name || 'Client'}</Text>
-                <Text style={styles.subText}>Tap to view messages</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
-        </TouchableOpacity>
-    );
+    const renderClientItem = ({ item }) => {
+        const isUnread = item.unread_count > 0;
+        return (
+            <TouchableOpacity style={styles.clientCard} onPress={() => handleClientPress(item)}>
+                <View style={[styles.avatar, { justifyContent: 'center', alignItems: 'center' }]}>
+                    {item.image || item.avatar_url ? (
+                        <Image source={{ uri: item.image || item.avatar_url }} style={styles.avatar} />
+                    ) : (
+                        <Ionicons name="person" size={24} color="#A0AEC0" />
+                    )}
+                    {item.role === 'admin' || item.role === 'owner' || item.role === 'branch_admin' ? (
+                        <View style={{ position: 'absolute', bottom: -5, right: -5, backgroundColor: '#3182CE', borderRadius: 10, padding: 2 }}>
+                            <Ionicons name="shield-checkmark" size={12} color="#FFF" />
+                        </View>
+                    ) : null}
+                </View>
+                <View style={styles.clientInfo}>
+                    <Text style={[styles.clientName, isUnread && styles.clientNameUnread]}>{item.name || item.full_name || 'User'}</Text>
+                    <Text style={[styles.subText, isUnread && styles.subTextUnread]}>Tap to view messages</Text>
+                </View>
+                {isUnread && (
+                    <View style={styles.greenDot} />
+                )}
+                <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+            </TouchableOpacity>
+        );
+    };
 
     const renderEmptyState = () => (
         <View style={styles.emptyStateContainer}>
@@ -152,10 +216,25 @@ const styles = StyleSheet.create({
         fontWeight: typography.fontWeight.bold,
         color: '#2D3748',
     },
+    clientNameUnread: {
+        fontWeight: '900',
+        color: '#1A202C',
+    },
     subText: {
         fontSize: typography.fontSize.sm,
         color: colors.gray[500],
         marginTop: 2,
+    },
+    subTextUnread: {
+        color: '#2D3748',
+        fontWeight: '600',
+    },
+    greenDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#48BB78',
+        marginRight: 10,
     },
     loadingContainer: {
         flex: 1,

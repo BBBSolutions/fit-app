@@ -14,6 +14,25 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 
+const formatDateTime = (dateString) => {
+    if (!dateString || dateString === 'Unknown') return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    
+    return `${month} ${day}, ${year}, ${hours}:${minutes} ${ampm}`;
+};
+
 const TrainerClientListScreen = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFilter, setSelectedFilter] = useState('All');
@@ -37,7 +56,7 @@ const TrainerClientListScreen = ({ navigation }) => {
             const formatted = data.map(c => ({
                 ...c,
                 status: c.status || 'Active',
-                lastActive: c.lastActive || 'N/A',
+                lastActive: formatDateTime(c.lastActive),
                 plan: c.plan || 'No Plan'
             }));
             setClients(formatted);

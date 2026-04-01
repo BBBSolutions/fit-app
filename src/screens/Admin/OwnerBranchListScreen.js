@@ -220,13 +220,32 @@ export default function OwnerBranchListScreen({ navigation }) {
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>All Branches</Text>
-                <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() => navigation.navigate('AdminCreateBranch')}
-                >
-                    <Ionicons name="add" size={24} color="#FFF" />
-                    <Text style={styles.addButtonText}>Add Branch</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row' }}>
+                    <TouchableOpacity
+                        style={styles.addButton}
+                        onPress={() => navigation.navigate('AdminCreateBranch')}
+                    >
+                        <Ionicons name="add" size={24} color="#FFF" />
+                        <Text style={styles.addButtonText}>Add Branch</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.addButton, { backgroundColor: '#E53E3E', marginLeft: 8, paddingHorizontal: 12 }]}
+                        onPress={async () => {
+                            try {
+                                const { supabase } = require('../../config/supabaseAuth');
+                                const { api } = require('../../services/api');
+                                await supabase.auth.signOut();
+                                await api.removeCustomToken();
+                                navigation.replace('Welcome');
+                            } catch (e) {
+                                console.error("Logout Error:", e);
+                                navigation.replace('Welcome');
+                            }
+                        }}
+                    >
+                        <Ionicons name="log-out-outline" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <FlatList

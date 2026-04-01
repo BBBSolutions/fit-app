@@ -49,7 +49,17 @@ serve(async (req) => {
             .single();
 
         if (existingMember) {
-            throw new Error('You are already a member of this gym.');
+            return new Response(
+                JSON.stringify({
+                    message: 'You are already a member of this gym.',
+                    alreadyMember: true,
+                    branch: branch
+                }),
+                {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 200,
+                }
+            );
         }
 
         // 3. Add to Branch

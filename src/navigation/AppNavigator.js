@@ -19,6 +19,7 @@ import EditWorkoutPlanScreen from '../screens/Shared/EditWorkoutPlanScreen';
 import MemberCreateWorkoutScreen from '../screens/Member/MemberCreateWorkoutScreen';
 import WorkoutResultsScreen from '../screens/Member/WorkoutResultsScreen';
 import MessagesScreen from '../screens/Member/MessagesScreen';
+import MessagesListScreen from '../screens/Member/MessagesListScreen';
 import AdminBrandingScreen from '../screens/Admin/AdminBrandingScreen';
 import AdminUserOnboardingScreen from '../screens/Admin/AdminUserOnboardingScreen';
 import AdminBillingScreen from '../screens/Admin/AdminBillingScreen';
@@ -28,6 +29,9 @@ import AdminLoginScreen from '../screens/Admin/AdminLoginScreen';
 import AdminSettingsScreen from '../screens/Admin/AdminSettingsScreen';
 import AdminContentManagerScreen from '../screens/Admin/AdminContentManagerScreen';
 import AdminLeadManagementScreen from '../screens/Admin/AdminLeadManagementScreen';
+import AdminBroadcastScreen from '../screens/Admin/AdminBroadcastScreen';
+import AdminInboxScreen from '../screens/Admin/AdminInboxScreen';
+import AdminChatScreen from '../screens/Admin/AdminChatScreen';
 import SuperAdminGlobalSettingsScreen from '../screens/SuperAdmin/SuperAdminGlobalSettingsScreen';
 import SuperAdminGymOnboardingManagerScreen from '../screens/SuperAdmin/SuperAdminGymOnboardingManagerScreen';
 import SuperAdminSubscriptionTierManagerScreen from '../screens/SuperAdmin/SuperAdminSubscriptionTierManagerScreen';
@@ -62,7 +66,7 @@ const AppNavigator = () => {
                 <Stack.Screen name="TrainerMainApp" component={TrainerBottomTabs} options={{ headerShown: false }} />
                 <Stack.Screen name="TrainerClientDetails" component={TrainerClientDetailsScreen} />
                 <Stack.Screen name="TrainerClientProgress" component={TrainerClientProgressScreen} />
-                <Stack.Screen name="Messages" component={MessagesScreen} options={{ headerShown: false }} />
+                <Stack.Screen name="Chat" component={MessagesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="EditWorkoutPlan" component={EditWorkoutPlanScreen} />
                 <Stack.Screen name="MemberCreateWorkout" component={MemberCreateWorkoutScreen} />
                 <Stack.Screen name="WorkoutResults" component={WorkoutResultsScreen} />
@@ -77,6 +81,9 @@ const AppNavigator = () => {
                 <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="AdminContentManager" component={AdminContentManagerScreen} />
                 <Stack.Screen name="AdminLeadManagement" component={AdminLeadManagementScreen} />
+                <Stack.Screen name="AdminBroadcast" component={AdminBroadcastScreen} options={{ headerShown: false }} />
+                <Stack.Screen name="AdminInbox" component={AdminInboxScreen} options={{ headerShown: false }} />
+                <Stack.Screen name="AdminChat" component={AdminChatScreen} options={{ headerShown: false }} />
                 <Stack.Screen name="SuperAdminGlobalSettings" component={SuperAdminGlobalSettingsScreen} />
                 <Stack.Screen name="SuperAdminGymOnboarding" component={SuperAdminGymOnboardingManagerScreen} />
                 <Stack.Screen name="SuperAdminSubscriptionTiers" component={SuperAdminSubscriptionTierManagerScreen} />

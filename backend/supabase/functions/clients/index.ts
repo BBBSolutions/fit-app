@@ -78,7 +78,8 @@ serve(async (req) => {
                     image: p.avatar_url,
                     lastActive: p.updated_at || 'Unknown',
                     age: p.age || 'N/A',
-                    plan: 'None'
+                    plan: 'None',
+                    assigned_session: p.assigned_session || null
                 }));
 
                 return new Response(JSON.stringify(mappedFallback), {
@@ -106,7 +107,8 @@ serve(async (req) => {
                 image: p.avatar_url,
                 lastActive: p.updated_at || 'Unknown',
                 age: p.age || 'N/A',
-                plan: 'None'
+                plan: 'None',
+                assigned_session: p.assigned_session || null
             }));
 
             return new Response(JSON.stringify(clients), {

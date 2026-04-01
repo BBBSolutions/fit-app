@@ -2,7 +2,6 @@ import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TrainerDashboardScreen from '../screens/Trainer/TrainerDashboardScreen';
@@ -19,7 +18,7 @@ import { useChat } from '../context/ChatContext';
 const Tab = createBottomTabNavigator();
 
 const TrainerBottomTabs = () => {
-    const { unreadCount } = useChat();
+    const { unreadCount, hasUnread } = useChat();
     const insets = useSafeAreaInsets();
 
     React.useEffect(() => {
@@ -52,42 +51,29 @@ const TrainerBottomTabs = () => {
                         />
                     );
                 },
-                tabBarActiveTintColor: colors.trainer.primary,
-                tabBarInactiveTintColor: colors.gray[400],
+                tabBarActiveTintColor: '#3182CE',
+                tabBarInactiveTintColor: '#A0AEC0',
                 tabBarShowLabel: true,
                 headerShown: false,
+                unmountOnBlur: Platform.OS === 'web',
                 tabBarStyle: {
-                    minHeight: 60 + insets.bottom,
-                    paddingBottom: Math.max(insets.bottom, 8),
+                    height: Platform.OS === 'web' ? 65 : 60 + insets.bottom,
+                    paddingBottom: Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8),
                     paddingTop: 8,
-                    backgroundColor: colors.white,
+                    backgroundColor: '#FFFFFF',
                     borderTopWidth: Platform.OS === 'web' ? 1 : 0,
-                    borderTopColor: colors.gray[200],
+                    borderTopColor: '#E2E8F0',
                     shadowColor: '#000',
-                    shadowOffset: { width: 0, height: -4 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 12,
-                    elevation: 12,
+                    shadowOffset: { width: 0, height: -2 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    elevation: 8,
                 },
                 tabBarLabelStyle: {
-                    fontSize: typography.fontSize.xs,
-                    fontWeight: typography.fontWeight.semibold,
-                    marginTop: -2,
+                    fontSize: 11,
+                    fontWeight: '600',
+                    marginTop: 4,
                 },
-                tabBarItemStyle: {
-                    paddingVertical: spacing.xs,
-                },
-                tabBarIconStyle: {
-                    marginBottom: -4,
-                },
-                tabBarBackground: () => (
-                    <LinearGradient
-                        colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 1)']}
-                        style={StyleSheet.absoluteFill}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 0, y: 1 }}
-                    />
-                ),
             })}
         >
             <Tab.Screen
@@ -116,8 +102,15 @@ const TrainerBottomTabs = () => {
                 component={TrainerChatScreen}
                 options={{
                     tabBarLabel: 'Messages',
-                    tabBarBadge: unreadCount > 0 ? unreadCount : null,
-                    tabBarBadgeStyle: { backgroundColor: colors.trainer.primary, color: 'white' }
+                    tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+                    tabBarBadgeStyle: {
+                        backgroundColor: '#38A169',
+                        color: '#FFF',
+                        fontSize: 10,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                    },
                 }}
             />
             <Tab.Screen

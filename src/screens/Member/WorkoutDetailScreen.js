@@ -149,12 +149,14 @@ const WorkoutDetailScreen = ({ route, navigation }) => {
     const handlePreviousExercise = () => {
         if (currentExerciseIndex > 0) {
             setCurrentExerciseIndex(currentExerciseIndex - 1);
+            setInputValues({});
         }
     };
 
     const handleNextExercise = () => {
         if (currentExerciseIndex < workout.exercises.length - 1) {
             setCurrentExerciseIndex(currentExerciseIndex + 1);
+            setInputValues({});
         }
     };
 

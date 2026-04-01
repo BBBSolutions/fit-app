@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useFocusEffect } from '@react-navigation/native';
+import { RefreshControl } from 'react-native';
 
 // Helper to get month names
 const MONTHS = [
@@ -34,9 +35,12 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
     const [allAssignments, setAllAssignments] = useState([]);
     const [currentTrainerId, setCurrentTrainerId] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     // Tab State
     const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'completed'
+
+    const weeksScrollRef = useRef(null);
 
     // Summary Data
     const [planSummary, setPlanSummary] = useState({
@@ -76,31 +80,71 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
         fetchProfile();
     }, []);
 
+    const loadData = async () => {
+        try {
+            const data = await api.getAssignedWorkouts('');
+            if (data && data.length > 0) {
+                const formatted = data.map(assignment => ({
+                    ...assignment,
+                    workout: assignment.workout || {},
+                    date: new Date(assignment.scheduled_date || assignment.created_at || Date.now())
+                }));
+                setAllAssignments(formatted);
+
+                if (formatted[0].trainer_id) {
+                    setCurrentTrainerId(formatted[0].trainer_id);
+                }
+            } else {
+                setAllAssignments([]);
+            }
+        } catch (err) {
+            console.error("Failed to fetch workouts:", err);
+        }
+    };
+
     // 2. Fetch Assignments
     useFocusEffect(
         React.useCallback(() => {
             setLoading(true);
-            api.getAssignedWorkouts('')
-                .then(data => {
-                    if (data && data.length > 0) {
-                        const formatted = data.map(assignment => ({
-                            ...assignment,
-                            workout: assignment.workout || {},
-                            date: new Date(assignment.scheduled_date || assignment.created_at || Date.now())
-                        }));
-                        setAllAssignments(formatted);
-
-                        if (formatted[0].trainer_id) {
-                            setCurrentTrainerId(formatted[0].trainer_id);
-                        }
-                    } else {
-                        setAllAssignments([]);
-                    }
-                })
-                .catch(err => console.error("Failed to fetch workouts:", err))
-                .finally(() => setLoading(false));
+            loadData().finally(() => setLoading(false));
         }, [])
     );
+
+    const onRefresh = React.useCallback(() => {
+        setRefreshing(true);
+        Promise.all([
+            api.getProfile().then(profile => {
+                setUserProfile(profile);
+                const created = (profile.createdAt || profile.created_at) ? new Date(profile.createdAt || profile.created_at) : new Date();
+                setSignupDate(created);
+            }),
+            loadData()
+        ]).finally(() => setRefreshing(false));
+    }, []);
+
+    // Auto-refresh: Poll for new assignments every 15 seconds
+    const lastAssignmentCountRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const checkForNewAssignments = async () => {
+            try {
+                const assignments = await api.getAssignedWorkouts('');
+                const currentCount = assignments ? assignments.length : 0;
+
+                if (lastAssignmentCountRef.current !== null && currentCount !== lastAssignmentCountRef.current) {
+                    console.log('WorkoutPlans Auto-refresh: Assignment count changed from', lastAssignmentCountRef.current, 'to', currentCount);
+                    loadData();
+                }
+                lastAssignmentCountRef.current = currentCount;
+            } catch (err) {
+                // Silently ignore polling errors
+            }
+        };
+
+        const interval = setInterval(checkForNewAssignments, 15000); // every 15 seconds
+
+        return () => clearInterval(interval);
+    }, []);
 
     // 3. User Weeks Calculation
     // Logic: Week 1 starts on signupDate. Week N is signupDate + (N-1)*7 days.
@@ -197,8 +241,10 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
             const currentWeek = weeksInView.find(w => today >= w.start && today <= w.end);
             if (currentWeek) {
                 setSelectedWeek(currentWeek);
+                setTimeout(() => weeksScrollRef.current?.scrollToEnd({ animated: true }), 300);
             } else {
                 setSelectedWeek(weeksInView[0]);
+                setTimeout(() => weeksScrollRef.current?.scrollTo({ x: 0, animated: true }), 300);
             }
         } else {
             setSelectedWeek(null);
@@ -325,7 +371,13 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={styles.contentContainer}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3182CE']} tintColor="#3182CE" />
+                }
+            >
 
                 <View style={styles.headerSection}>
                     <Text style={styles.headerTitle}>My Journey</Text>
@@ -395,7 +447,7 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
 
                 {/* Weeks Horizontal List */}
                 <View style={styles.weeksListContainer}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+                    <ScrollView ref={weeksScrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
                         {weeksInView.length > 0 ? weeksInView.map((week) => {
                             const isActive = selectedWeek && selectedWeek.id === week.id;
                             return (
@@ -496,7 +548,7 @@ const WorkoutPlansScreen = ({ navigation, route }) => {
                 <TouchableOpacity style={styles.fabMain} onPress={() => navigation.navigate('MemberCreateWorkout')}>
                     <Ionicons name="add" size={30} color="#FFFFFF" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.fabMini} onPress={() => navigation.navigate('Messages', { trainerId: currentTrainerId })}>
+                <TouchableOpacity style={styles.fabMini} onPress={() => navigation.navigate('Chat', { trainerId: currentTrainerId })}>
                     <Ionicons name="chatbubble-ellipses-outline" size={22} color="#3182CE" />
                 </TouchableOpacity>
             </View>

@@ -105,7 +105,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
-                    address: u.address || ''
+                    address: u.address || '',
+                    assignedSession: u.assigned_session || ''
                 }));
                 setUsers(mappedUsers);
             } else {
@@ -143,7 +144,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     status: u.status || 'Active',
                     plan_id: u.plan_id,
                     pt_plan_id: u.pt_plan_id,
-                    address: u.address || ''
+                    address: u.address || '',
+                    assignedSession: u.assigned_session || ''
                 }));
                 setUsers(mappedUsers);
             }
@@ -159,7 +161,7 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
     const pendingInvites = 0;
 
     const handleAddUser = () => {
-        setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '', address: '', plan_id: null, pt_plan_id: null });
+        setCurrentUser({ name: '', phone: '', email: '', role: 'Member', assignedTrainer: '', address: '', plan_id: null, pt_plan_id: null, assignedSession: '' });
         setModalVisible(true);
     };
 
@@ -197,7 +199,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     address: currentUser.address,
                     plan_id: currentUser.plan_id,
                     pt_plan_id: currentUser.pt_plan_id,
-                    assigned_trainer_id: currentUser.assignedTrainerId
+                    assigned_trainer_id: currentUser.assignedTrainerId,
+                    assigned_session: currentUser.assignedSession
                 }, branchId);
                 setUsers(users.map(u => u.id === currentUser.id ? { ...u, ...currentUser } : u));
             } else {
@@ -209,7 +212,8 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     address: currentUser.address,
                     plan_id: currentUser.plan_id,
                     pt_plan_id: currentUser.pt_plan_id,
-                    assigned_trainer_id: currentUser.assignedTrainerId
+                    assigned_trainer_id: currentUser.assignedTrainerId,
+                    assigned_session: currentUser.assignedSession
                 }, branchId);
                 await fetchUsers();
                 if (convertingLeadId) {
@@ -363,6 +367,10 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                     <TouchableOpacity style={styles.sidebarItemActive}>
                         <Ionicons name="people" size={20} color={colors.primary} />
                         <Text style={styles.sidebarItemTextActive}>Users</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBroadcast', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="megaphone-outline" size={20} color={colors.text.secondary} />
+                        <Text style={styles.sidebarItemText}>Broadcast</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
                         <Ionicons name="settings-outline" size={20} color={colors.text.secondary} />
@@ -717,6 +725,28 @@ const AdminUserOnboardingScreen = ({ navigation, route }) => {
                                             value={currentUser?.assignedTrainerId}
                                             onChange={item => {
                                                 setCurrentUser({ ...currentUser, assignedTrainerId: item.id, assignedTrainer: item.name });
+                                            }}
+                                        />
+                                    </View>
+
+                                    <Text style={styles.label}>Trainer Session Slot</Text>
+                                    <View style={styles.pickerContainer}>
+                                        <Dropdown
+                                            style={styles.dropdown}
+                                            placeholderStyle={styles.placeholderStyle}
+                                            selectedTextStyle={styles.selectedTextStyle}
+                                            data={[
+                                                { label: 'Morning (6 AM - 12 PM)', value: 'Morning' },
+                                                { label: 'Afternoon (12 PM - 4 PM)', value: 'Afternoon' },
+                                                { label: 'Evening (4 PM - 10 PM)', value: 'Evening' }
+                                            ]}
+                                            maxHeight={300}
+                                            labelField="label"
+                                            valueField="value"
+                                            placeholder="Select Session (Optional)"
+                                            value={currentUser?.assignedSession}
+                                            onChange={item => {
+                                                setCurrentUser({ ...currentUser, assignedSession: item.value });
                                             }}
                                         />
                                     </View>

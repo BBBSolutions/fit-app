@@ -71,16 +71,17 @@ const MemberLoginScreen = ({ navigation, route }) => {
       // 3. Join Gym Logic (if applicable)
       if (gymCode) {
         try {
-          // TODO: Check if already member? api.joinBranch checks internally or throws?
-          await adminApi.joinBranch(gymCode, 'member');
-          Alert.alert('Success', `You have successfully joined the gym (${gymCode})!`);
+          const res = await adminApi.joinBranch(gymCode, 'member');
+          if (res && !res.alreadyMember) {
+            Alert.alert('Success', `You have successfully joined the gym (${gymCode})!`);
+          }
         } catch (joinErr) {
-          console.error("Join Gym Error:", joinErr);
-          // Only alert if it's a real error, not "Already member"
-          if (joinErr.message?.includes('already a member')) {
-            console.log("Already a member, proceeding...");
-          } else if (!joinErr.message?.includes('Generic error')) {
-            Alert.alert('Notice', 'Login successful. (Join status: ' + joinErr.message + ')');
+          const msg = joinErr.message || "";
+          if (msg.toLowerCase().includes('already a member')) {
+            // Expected state for returning users, no log needed
+          } else {
+            console.error("Join Gym Error:", joinErr);
+            Alert.alert('Notice', 'Login successful. (Join status: ' + msg + ')');
           }
         }
       }
@@ -89,6 +90,23 @@ const MemberLoginScreen = ({ navigation, route }) => {
       try {
         const profile = await api.getProfile();
         console.log("Login Profile Check (Member):", profile);
+
+        // --- Role Validation ---
+        // If profile has roles, they must include 'member' or be empty (new user).
+        if (profile && profile.roles && profile.roles.length > 0) {
+          if (!profile.roles.includes('member')) {
+            // Not a member (e.g., exclusively trainer or owner).
+            await api.removeCustomToken(); // Clear token
+            if (Platform.OS === 'web') {
+              window.alert("Access Denied: This phone number is registered as a Trainer. Please use the Trainer App.");
+            } else {
+              Alert.alert("Access Denied", "This phone number is registered as a Trainer. Please use the Trainer App.");
+            }
+            setLoading(false);
+            return;
+          }
+        }
+        // -----------------------
 
         // If profile has name and goal, assume onboarding done
         if (profile && profile.name && profile.goal) {

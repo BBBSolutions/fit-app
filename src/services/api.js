@@ -4,14 +4,32 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CUSTOM_TOKEN_KEY = 'fitapp_custom_jwt';
 
+// Returns true if a JWT token string is expired
+const isTokenExpired = (token) => {
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (!payload.exp) return false;
+        // Add a 30-second buffer to avoid edge cases
+        return Date.now() >= (payload.exp - 30) * 1000;
+    } catch (e) {
+        return true; // Treat unparseable tokens as expired
+    }
+};
+
 const getHeaders = async () => {
     // 1. Try Custom JWT first (MVP Auth)
     const customToken = await AsyncStorage.getItem(CUSTOM_TOKEN_KEY);
     if (customToken) {
-        return {
-            'Authorization': `Bearer ${customToken}`,
-            'Content-Type': 'application/json'
-        };
+        if (isTokenExpired(customToken)) {
+            console.warn('Custom JWT expired, clearing stored token.');
+            await AsyncStorage.removeItem(CUSTOM_TOKEN_KEY);
+            // Fall through to Supabase session below
+        } else {
+            return {
+                'Authorization': `Bearer ${customToken}`,
+                'Content-Type': 'application/json'
+            };
+        }
     }
 
     // 2. Fallback to Supabase Auth (Legacy/Future)
@@ -220,7 +238,11 @@ export const api = {
             headers,
             body: JSON.stringify({ bucket, fileName, fileType })
         });
-        if (!response.ok) throw new Error('Failed to get upload URL');
+        if (!response.ok) {
+            const text = await response.text();
+            console.error("Presign error:", response.status, text);
+            throw new Error(`Failed to get upload URL: ${text}`);
+        }
         return response.json();
     },
 
@@ -431,7 +453,7 @@ export const api = {
 
     getMessages: async (targetUserId) => {
         const headers = await getHeaders();
-        const response = await fetch(`${API_BASE_URL}/messages/list?userId=${targetUserId}`, {
+        const response = await fetch(`${API_BASE_URL}/messages/list?userId=${targetUserId}&_t=${Date.now()}`, {
             method: 'GET',
             headers
         });
@@ -447,6 +469,29 @@ export const api = {
             body: JSON.stringify({ senderId })
         });
         if (!response.ok) throw new Error('Failed to mark messages as read');
+        return response.json();
+    },
+
+    getChatThreads: async () => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/threads?_t=${Date.now()}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) {
+            console.warn("Failed to fetch chat threads. Endpoint might be missing.");
+            return [];
+        }
+        return response.json();
+    },
+
+    getUnreadCount: async () => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/unread-count?_t=${Date.now()}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to fetch unread count');
         return response.json();
     },
 
@@ -486,8 +531,18 @@ export const api = {
             method: 'GET',
             headers
         });
-        if (!response.ok) throw new Error('Failed to fetch measurement history');
-        return response.json();
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Fetch Data Error:", response.status, errText);
+            throw new Error('Failed to fetch measurement history: ' + errText);
+        }
+        const text = await response.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error("Failed to parse measurement response:", text);
+            throw new Error("Invalid format from server: " + text.substring(0, 100));
+        }
     },
 
     logMeasurement: async (date, type, value) => {
@@ -543,16 +598,6 @@ export const api = {
         return response.json();
     },
 
-    getUnreadCount: async () => {
-        const headers = await getHeaders();
-        const response = await fetch(`${API_BASE_URL}/messages/unread-count`, {
-            method: 'GET',
-            headers
-        });
-        if (!response.ok) throw new Error('Failed to fetch unread count');
-        return response.json();
-    },
-
     // Custom Auth Helpers
     setCustomToken: async (token) => {
         await AsyncStorage.setItem(CUSTOM_TOKEN_KEY, token);
@@ -581,6 +626,58 @@ export const api = {
             } catch (e) { }
             throw new Error(errorMessage || 'Failed to send WhatsApp OTP');
         }
+        return response.json();
+    },
+
+    // Trainer Schedule
+    getTrainerSchedule: async (date) => {
+        const headers = await getHeaders();
+        const dateStr = date ? date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+        const response = await fetch(`${API_BASE_URL}/trainer-schedule?date=${dateStr}`, {
+            method: 'GET',
+            headers
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Trainer Schedule Error:", response.status, errorText);
+            return [];
+        }
+        return response.json();
+    },
+
+    createScheduledSession: async (sessionData) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/trainer-schedule`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(sessionData)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Create Schedule Error:", response.status, errorText);
+            throw new Error('Failed to create scheduled session');
+        }
+        return response.json();
+    },
+
+    updateScheduledSession: async (sessionId, updates) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/trainer-schedule?id=${sessionId}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(updates)
+        });
+        if (!response.ok) throw new Error('Failed to update scheduled session');
+        return response.json();
+    },
+
+    deleteScheduledSession: async (sessionId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/trainer-schedule?id=${sessionId}`, {
+            method: 'DELETE',
+            headers
+        });
+        if (!response.ok) throw new Error('Failed to delete scheduled session');
         return response.json();
     },
 

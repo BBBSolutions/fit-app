@@ -147,6 +147,55 @@ serve(async (req) => {
             return new Response(JSON.stringify({ count: count || 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
+        // GET /messages/threads
+        if (action === 'threads' && req.method === 'GET') {
+            const { data, error } = await supabaseClient
+                .from('messages')
+                .select('sender_id, receiver_id, created_at, is_read')
+                .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            
+            const threadData: Record<string, any> = {};
+            
+            data.forEach(m => {
+                const otherUser = m.sender_id === userId ? m.receiver_id : m.sender_id;
+                
+                if (!threadData[otherUser]) {
+                    threadData[otherUser] = { unread_count: 0, last_message_time: m.created_at };
+                }
+                
+                if (m.receiver_id === userId && m.is_read === false) {
+                    threadData[otherUser].unread_count += 1;
+                }
+            });
+
+            const uniqueIds = Object.keys(threadData);
+
+            if (uniqueIds.length === 0) {
+                 return new Response(JSON.stringify([]), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            const { data: profiles, error: pError } = await supabaseClient
+                .from('profiles')
+                .select('user_id, name, full_name, role')
+                .in('user_id', uniqueIds);
+
+            if (pError) throw pError;
+            
+            const results = profiles.map(p => ({
+                user_id: p.user_id,
+                name: p.name,
+                full_name: p.full_name,
+                role: p.role,
+                unread_count: threadData[p.user_id]?.unread_count || 0,
+                last_message_time: threadData[p.user_id]?.last_message_time || null
+            }));
+            
+            return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
         throw new Error("Method not allowed");
 
     } catch (error) {

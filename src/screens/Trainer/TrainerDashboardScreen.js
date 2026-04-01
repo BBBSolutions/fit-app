@@ -6,24 +6,24 @@ import {
     ScrollView,
     TouchableOpacity,
     RefreshControl,
-    Dimensions
+    Dimensions,
+    SafeAreaView,
+    Image
 } from 'react-native';
 import { BarChart } from "react-native-chart-kit";
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../../services/api';
 import { useChat } from '../../context/ChatContext';
 
 // UI Components
-import ScreenWrapper from '../../components/ScreenWrapper';
-import GradientCard from '../../components/GradientCard';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme/theme';
 
 const TrainerDashboardScreen = ({ navigation }) => {
     const { unreadCount } = useChat();
     const [showFABMenu, setShowFABMenu] = useState(false);
     const [trainerName, setTrainerName] = useState('Coach');
+    const [trainerImage, setTrainerImage] = useState(null);
     const [clientCount, setClientCount] = useState(0);
 
     // Schedule / Assignments State
@@ -51,6 +51,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
             if (profile) {
                 const nameToDisplay = profile.fullName || profile.name || 'Coach';
                 setTrainerName(nameToDisplay);
+                setTrainerImage(profile.avatarUrl || profile.avatar_url || profile.image || null);
             }
 
             if (Array.isArray(clients)) {
@@ -86,6 +87,25 @@ const TrainerDashboardScreen = ({ navigation }) => {
 
                 // Generate Notifications from Assignments
                 const newNotifications = [];
+
+                // 0. Unread messages from Admin/members
+                try {
+                    const threads = await api.getChatThreads();
+                    if (Array.isArray(threads)) {
+                        const unreadThreads = threads.filter(t => t.unread_count > 0);
+                        unreadThreads.forEach(t => {
+                            newNotifications.push({
+                                id: `msg-${t.user_id}`,
+                                text: `New message from ${t.name || t.full_name || 'Admin'} (${t.unread_count} unread)`,
+                                icon: 'chatbubble-ellipses',
+                                color: '#E53E3E',
+                                onPress: () => {} // placeholder, will navigate below
+                            });
+                        });
+                    }
+                } catch (e) {
+                    // silent fail
+                }
 
                 // 1. Recent completions
                 const recentCompletions = all.filter(w => w.status?.toLowerCase() === 'completed').slice(0, 3);
@@ -174,7 +194,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
     }, [allAssignments, filterMode, selectedDate]);
 
     return (
-        <ScreenWrapper useGradient={false} style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
             {/* Header - Transparent to show gradient */}
             <View style={styles.headerContainer}>
                 <View style={styles.header}>
@@ -183,7 +203,11 @@ const TrainerDashboardScreen = ({ navigation }) => {
                         <Text style={styles.headerSubtitle}>Welcome back, {trainerName}!</Text>
                     </View>
                     <TouchableOpacity style={styles.avatarButton} onPress={() => navigation.navigate('Profile')}>
-                        <Ionicons name="person-circle" size={40} color={colors.text.primary} />
+                        {trainerImage ? (
+                            <Image source={{ uri: trainerImage }} style={styles.profileImage} />
+                        ) : (
+                            <Ionicons name="person-circle" size={40} color={colors.text.primary} />
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -195,37 +219,29 @@ const TrainerDashboardScreen = ({ navigation }) => {
             >
                 {/* 2. Quick Stats Section */}
                 <View style={styles.statsRow}>
-                    <GradientCard
-                        gradientBorder={false} // Use solid bg or internal gradient
-                        style={[styles.statCardWrapper, { backgroundColor: 'transparent' }]}
-                        contentStyle={{ padding: 0, backgroundColor: 'transparent' }}
-                        fullHeight={true}
-                    >
-                        <LinearGradient
-                            colors={['#4299E1', '#3182CE']}
-                            style={styles.gradientStatContent}
-                        >
-                            <Ionicons name="people" size={28} color="#FFF" />
-                            <Text style={styles.statValueLight}>{clientCount}</Text>
-                            <Text style={styles.statLabelLight}>Active Clients</Text>
-                        </LinearGradient>
-                    </GradientCard>
+                    <View style={[styles.card, styles.statCardWrapper]}>
+                        <View style={styles.statContent}>
+                            <Ionicons name="people" size={28} color="#3182CE" />
+                            <Text style={styles.statValue}>{clientCount}</Text>
+                            <Text style={styles.statLabel}>Active Clients</Text>
+                        </View>
+                    </View>
 
-                    <GradientCard style={styles.statCardWrapper} fullHeight={true}>
+                    <View style={[styles.card, styles.statCardWrapper]}>
                         <View style={styles.statContent}>
                             <Ionicons name="document-text" size={28} color={colors.warning} />
                             <Text style={styles.statValue}>0</Text>
                             <Text style={styles.statLabel}>Pending Reviews</Text>
                         </View>
-                    </GradientCard>
+                    </View>
 
-                    <GradientCard style={styles.statCardWrapper} fullHeight={true}>
+                    <View style={[styles.card, styles.statCardWrapper]}>
                         <View style={styles.statContent}>
                             <Ionicons name="calendar" size={28} color={colors.success} />
                             <Text style={styles.statValue}>{displayedAssignments ? displayedAssignments.length : 0}</Text>
                             <Text style={styles.statLabel}>Visible Plans</Text>
                         </View>
-                    </GradientCard>
+                    </View>
                 </View>
 
                 {/* 4. Today's Schedule */}
@@ -276,7 +292,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                         </ScrollView>
                     )}
 
-                    <GradientCard glassmorphic={true} style={{ padding: 0 }} contentStyle={{ padding: spacing.sm }}>
+                    <View style={[styles.card, { padding: spacing.sm }]}>
                         {loadingSchedule ? (
                             <View style={styles.emptyState}>
                                 <Text style={styles.emptyStateText}>Loading schedule...</Text>
@@ -298,6 +314,7 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                         />
                                         {/* Using assigned time or default */}
                                         <Text style={styles.sessionTimeText}>
+                                            {new Date(session.assigned_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}{'\n'}
                                             {new Date(session.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </Text>
                                     </View>
@@ -315,13 +332,13 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                 </View>
                             ))
                         )}
-                    </GradientCard>
+                    </View>
                 </View>
 
                 {/* 5. Client Management Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Client Management</Text>
-                    <GradientCard glassmorphic={true} contentStyle={{ padding: 0 }}>
+                    <View style={[styles.card, { padding: 0 }]}>
                         <TouchableOpacity
                             style={styles.managementOption}
                             onPress={() => navigation.navigate('Clients')}
@@ -339,13 +356,13 @@ const TrainerDashboardScreen = ({ navigation }) => {
                             <Text style={styles.managementText}>Messages / Chat</Text>
                             <Ionicons name="chevron-forward" size={20} color="#666" />
                         </TouchableOpacity>
-                    </GradientCard>
+                    </View>
                 </View>
 
                 {/* 6. Performance Analytics */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Weekly Performance</Text>
-                    <GradientCard glassmorphic={true}>
+                    <View style={styles.card}>
                         {allAssignments.length > 0 ? (
                             <View style={{ alignItems: 'center' }}>
                                 <BarChart
@@ -413,13 +430,13 @@ const TrainerDashboardScreen = ({ navigation }) => {
                                 <Text style={styles.metricLabel}>Active Clients</Text>
                             </View>
                         </View>
-                    </GradientCard>
+                    </View>
                 </View>
 
                 {/* 7. Notifications Panel */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Notifications</Text>
-                    <GradientCard glassmorphic={true} contentStyle={{ padding: 0 }}>
+                    <View style={[styles.card, { padding: 0 }]}>
                         {unreadCount > 0 && (
                             <TouchableOpacity
                                 style={styles.notificationItem}
@@ -433,30 +450,55 @@ const TrainerDashboardScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         )}
                         {notifications.length > 0 ? (
-                            notifications.map((notification) => (
-                                <View key={notification.id} style={styles.notificationItem}>
-                                    <View style={[styles.notificationIcon, { backgroundColor: notification.color ? notification.color + '20' : '#EBF8FF' }]}>
-                                        <Ionicons name={notification.icon} size={20} color={notification.color || "#3182CE"} />
-                                    </View>
-                                    <Text style={styles.notificationText}>{notification.text}</Text>
-                                </View>
-                            ))
+                            notifications.map((notification) => {
+                                const isMessage = notification.id?.startsWith('msg-');
+                                const Inner = (
+                                    <>
+                                        <View style={[styles.notificationIcon, { backgroundColor: notification.color ? notification.color + '20' : '#EBF8FF' }]}>
+                                            <Ionicons name={notification.icon} size={20} color={notification.color || '#3182CE'} />
+                                        </View>
+                                        <Text style={[styles.notificationText, isMessage && { fontWeight: '700', color: '#C53030' }]}>{notification.text}</Text>
+                                        {isMessage && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#E53E3E', marginLeft: 'auto' }} />}
+                                    </>
+                                );
+                                return isMessage ? (
+                                    <TouchableOpacity key={notification.id} style={styles.notificationItem} onPress={() => navigation.navigate('Messages')}>
+                                        {Inner}
+                                    </TouchableOpacity>
+                                ) : (
+                                    <View key={notification.id} style={styles.notificationItem}>{Inner}</View>
+                                );
+                            })
                         ) : (
                             <Text style={{ color: colors.gray[500], fontStyle: 'italic', textAlign: 'center', padding: 10 }}>
                                 No new notifications
                             </Text>
                         )}
-                    </GradientCard>
+                    </View>
                 </View>
 
                 <View style={styles.bottomSpacer} />
             </ScrollView>
 
-        </ScreenWrapper>
+        </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#F5F7FA',
+    },
+    card: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 3,
+    },
     container: {
         flex: 1,
     },
@@ -487,6 +529,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    profileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+    },
     scrollView: {
         flex: 1,
     },
@@ -506,20 +553,14 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: 100, // Ensure they don't get too small before wrapping
         minHeight: 110,
-    },
-    gradientStatContent: {
-        flex: 1, // Now safe as GradientCard internals have flex: 1
-        borderRadius: borderRadius.lg,
-        width: '100%',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: spacing.md,
+        padding: 10,
+        margin: 0,
     },
     statContent: {
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
-        flex: 1, // Now safe as GradientCard internals have flex: 1
+        flex: 1,
     },
     statValue: {
         fontSize: typography.fontSize.xl,
@@ -635,10 +676,11 @@ const styles = StyleSheet.create({
         minWidth: 80,
     },
     sessionTimeText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
         color: '#2D3748',
         marginLeft: 6,
+        textAlign: 'center',
     },
     sessionInfo: {
         flex: 1,

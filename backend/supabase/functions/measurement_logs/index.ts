@@ -33,38 +33,54 @@ serve(async (req) => {
 
         // GET Request (Fetch History)
         if (req.method === 'GET') {
-            const type = url.searchParams.get('type');
-            const dateGte = url.searchParams.get('date.gte'); // We'll parse manual params from our API convention
-            const dateLte = url.searchParams.get('date.lte');
+            const url = new URL(req.url);
+            let type = url.searchParams.get('type') || url.searchParams.get('type_filter');
+            let dateGte = url.searchParams.get('date.gte') || url.searchParams.get('start_date');
+            let dateLte = url.searchParams.get('date.lte') || url.searchParams.get('end_date');
+            
+            // Allow fetching for another user if user_id is passed (e.g. Trainer viewing Client)
+            const targetUserId = url.searchParams.get('user_id') || userId;
+            console.log(`[measurement_logs GET] authUserId: ${userId}, targetUserId: ${targetUserId}, type: ${type}, dateGte: ${dateGte}, dateLte: ${dateLte}`);
+
+            if (type?.startsWith('eq.')) type = type.replace('eq.', '');
+            if (dateGte?.startsWith('gte.')) dateGte = dateGte.replace('gte.', '');
+            if (dateLte?.startsWith('lte.')) dateLte = dateLte.replace('lte.', '');
+
+            // Ensure 'type' is one of the valid columns to prevent SQL injection or bad requests
+            const validColumns = ['weight', 'waist', 'hips', 'chest', 'arms', 'thighs', 'neck', 'shoulders', 'calves', 'body_fat_percentage', 'muscle_mass_percentage', 'water_percentage', 'bone_mass', 'visceral_fat', 'bmr', 'metabolic_age'];
+            if (!validColumns.includes(type)) {
+                // If the frontend sends something we don't know, just return empty to not crash
+                return new Response(JSON.stringify([]), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // Map frontend 'hips' to database column 'hip'
+            const dbColumn = type === 'hips' ? 'hip' : type;
 
             let query = supabaseClient
                 .from('measurement_logs')
-                .select('*')
-                .eq('user_id', userId)
+                .select(`id, date, ${dbColumn}`)
+                .eq('user_id', targetUserId)
+                .not(dbColumn, 'is', null)
                 .order('date', { ascending: true });
 
-            // Since api.js sends PostgREST style params like type=eq.weight, we need to parse or simplify api.js
-            // Let's simplify api.js to send clear params, OR handle the "eq." prefix here.
-            // For robustness, let's look for clean params 'type', 'startDate', 'endDate'
-
-            // NOTE: I will update api.js to send clean query params: ?type=weight&startDate=...&endDate=...
-            if (type) query = query.eq('type', type.replace('eq.', ''));
-            if (dateGte) query = query.gte('date', dateGte.replace('gte.', ''));
-            if (dateLte) query = query.lte('date', dateLte.replace('lte.', ''));
-
-            // Check if specific clean params are passed (from updated api.js)
-            const cleanType = url.searchParams.get('type_filter');
-            const cleanStart = url.searchParams.get('start_date');
-            const cleanEnd = url.searchParams.get('end_date');
-
-            if (cleanType) query = query.eq('type', cleanType);
-            if (cleanStart) query = query.gte('date', cleanStart);
-            if (cleanEnd) query = query.lte('date', cleanEnd);
+            if (dateGte) query = query.gte('date', dateGte);
+            if (dateLte) query = query.lte('date', dateLte);
 
             const { data, error } = await query;
+            console.log(`[measurement_logs GET] Query result: ${data?.length} rows, error: ${error?.message || 'none'}`);
             if (error) throw error;
 
-            return new Response(JSON.stringify(data), {
+            // Map the specific column back to a generic 'value' property for the frontend
+            const mappedData = data.map(item => ({
+                id: item.id,
+                date: item.date,
+                type: type,
+                value: item[dbColumn]
+            }));
+
+            return new Response(JSON.stringify(mappedData), {
                 headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
         }
@@ -76,17 +92,48 @@ serve(async (req) => {
 
             if (!date || !type || value === undefined) throw new Error("Missing required fields: date, type, value");
 
-            const { data, error } = await supabaseClient
-                .from('measurement_logs')
-                .insert({
-                    user_id: userId,
-                    date,
-                    type,
-                    value
-                })
-                .select()
-                .single();
+            const validColumns = ['weight', 'waist', 'hips', 'chest', 'arms', 'thighs', 'neck', 'shoulders', 'calves', 'body_fat_percentage', 'muscle_mass_percentage', 'water_percentage', 'bone_mass', 'visceral_fat', 'bmr', 'metabolic_age'];
+            if (!validColumns.includes(type)) {
+                throw new Error("Invalid measurement type: " + type);
+            }
 
+            // Map frontend 'hips' to database column 'hip'
+            const dbColumn = type === 'hips' ? 'hip' : type;
+
+            // First, try to fetch an existing log for this date
+            const { data: existingLog, error: fetchError } = await supabaseClient
+                .from('measurement_logs')
+                .select('*')
+                .eq('user_id', userId)
+                .eq('date', date)
+                .limit(1)
+                .maybeSingle();
+
+            if (fetchError) throw fetchError;
+
+            let query;
+            if (existingLog) {
+                // Update the existing row for this date
+                query = supabaseClient
+                    .from('measurement_logs')
+                    .update({ [dbColumn]: value })
+                    .eq('id', existingLog.id)
+                    .select()
+                    .single();
+            } else {
+                // Insert a new row for this date
+                query = supabaseClient
+                    .from('measurement_logs')
+                    .insert({
+                        user_id: userId,
+                        date,
+                        [dbColumn]: value
+                    })
+                    .select()
+                    .single();
+            }
+
+            const { data, error } = await query;
             if (error) throw error;
 
             return new Response(JSON.stringify(data), {

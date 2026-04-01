@@ -11,6 +11,7 @@ const AdminDrawer = ({ visible, onClose, navigation, currentScreen, extraParams 
         { name: 'Users', route: 'AdminUserOnboarding', icon: 'people-outline' },
         { name: 'Billing', route: 'AdminBilling', icon: 'card-outline' },
         // { name: 'Analytics', route: 'AdminAnalytics', icon: 'bar-chart-outline' },
+        { name: 'Broadcast', route: 'AdminBroadcast', icon: 'megaphone-outline' },
         { name: 'Settings', route: 'AdminSettings', icon: 'settings-outline' },
     ];
 
@@ -77,7 +78,20 @@ const AdminDrawer = ({ visible, onClose, navigation, currentScreen, extraParams 
 
                     {/* Footer */}
                     <View style={styles.footer}>
-                        <TouchableOpacity style={styles.footerButton}>
+                        <TouchableOpacity style={styles.footerButton} onPress={async () => {
+                            try {
+                                const { supabase } = require('../config/supabaseAuth');
+                                const { api } = require('../services/api');
+                                await supabase.auth.signOut();
+                                await api.removeCustomToken();
+                                onClose();
+                                navigation.replace('Welcome');
+                            } catch (e) {
+                                console.error("Logout Error:", e);
+                                onClose();
+                                navigation.replace('Welcome');
+                            }
+                        }}>
                             <Ionicons name="log-out-outline" size={20} color="#E53E3E" />
                             <Text style={styles.footerButtonText}>Logout</Text>
                         </TouchableOpacity>

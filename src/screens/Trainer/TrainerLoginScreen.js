@@ -76,13 +76,16 @@ const TrainerLoginScreen = ({ navigation, route }) => {
             // 3. Join Gym Logic
             if (gymCode) {
                 try {
-                    await adminApi.joinBranch(gymCode, 'trainer');
-                    Alert.alert('Success', `You have successfully joined the gym (${gymCode}) as a Trainer!`);
+                    const res = await adminApi.joinBranch(gymCode, 'trainer');
+                    if (res && !res.alreadyMember) {
+                        Alert.alert('Success', `You have successfully joined the gym (${gymCode}) as a Trainer!`);
+                    }
                 } catch (joinErr) {
-                    console.error("Join Gym Error:", joinErr);
-                    if (joinErr.message?.includes('already a member')) {
-                        console.log("Already a member, proceeding...");
+                    const msg = joinErr.message || "";
+                    if (msg.toLowerCase().includes('already a member')) {
+                        // Expected state for returning users, no log needed
                     } else {
+                        console.error("Join Gym Error:", joinErr);
                         Alert.alert('Notice', 'Login successful, but failed to join gym automatically. Please contact Owner.');
                     }
                 }
@@ -92,6 +95,23 @@ const TrainerLoginScreen = ({ navigation, route }) => {
             try {
                 const profile = await api.getProfile();
                 console.log("Login Profile Check (Trainer):", profile);
+
+                // --- Role Validation ---
+                // If profile has roles, they must include 'trainer' or 'owner'.
+                if (profile && profile.roles && profile.roles.length > 0) {
+                    if (!profile.roles.includes('trainer') && !profile.roles.includes('owner')) {
+                        // Not a trainer or owner. (e.g., just a member)
+                        await api.removeCustomToken(); // Clear token
+                        if (Platform.OS === 'web') {
+                            window.alert("Access Denied: This phone number is registered as a Member. Please use the Member App.");
+                        } else {
+                            Alert.alert("Access Denied", "This phone number is registered as a Member. Please use the Member App.");
+                        }
+                        setLoading(false);
+                        return;
+                    }
+                }
+                // -----------------------
 
                 if (profile && profile.fullName && profile.primarySpecialization) {
                     navigation.replace('TrainerMainApp');

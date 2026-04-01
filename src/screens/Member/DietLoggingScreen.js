@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -10,6 +10,7 @@ import {
     Platform,
     Modal,
     Alert,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
@@ -18,7 +19,7 @@ const DietLoggingScreen = ({ navigation }) => {
     const [dailyCalories, setDailyCalories] = useState(1450);
     const [recommendedCalories] = useState(2200);
     const [waterIntake, setWaterIntake] = useState(1500);
-    const [waterGoal] = useState(3000);
+    const [waterGoal] = useState(5000);
 
     const [meals, setMeals] = useState([
         {
@@ -175,60 +176,87 @@ const DietLoggingScreen = ({ navigation }) => {
     };
 
     const [initialData, setInitialData] = useState(null);
+    const [selectedDate, setSelectedDate] = useState(new Date());
 
-    // Backend Integration
-    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = useMemo(() => {
+        const now = new Date();
+        return (
+            selectedDate.getDate() === now.getDate() &&
+            selectedDate.getMonth() === now.getMonth() &&
+            selectedDate.getFullYear() === now.getFullYear()
+        );
+    }, [selectedDate]);
+
+    const changeDate = (days) => {
+        const newDate = new Date(selectedDate);
+        newDate.setDate(newDate.getDate() + days);
+        if (newDate > new Date()) return;
+        
+        if (hasUnsavedChanges()) {
+            Alert.alert(
+                'Unsaved Changes',
+                'You have unsaved changes. Discard them?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Discard', style: 'destructive', onPress: () => setSelectedDate(newDate) }
+                ]
+            );
+        } else {
+            setSelectedDate(newDate);
+        }
+    };
+
+    const dateStr = useMemo(() => {
+        const d = selectedDate;
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }, [selectedDate]);
 
     const loadDietData = async () => {
         try {
-            const log = await api.getDietLog(todayStr);
+            const log = await api.getDietLog(dateStr);
             if (log) {
                 const loadedMeals = log.meals || [];
                 const loadedWater = log.water_intake || 0;
                 const loadedCalories = log.daily_calories || 0;
 
-                // Update current state
                 setMeals(loadedMeals);
                 setWaterIntake(loadedWater);
                 setDailyCalories(loadedCalories);
 
-                // Update initial state for dirty checking
                 setInitialData({
                     meals: JSON.stringify(loadedMeals),
                     water: loadedWater,
                     calories: loadedCalories
                 });
             } else {
-                // No log found, set initial empty state
+                setMeals([]);
+                setWaterIntake(0);
+                setDailyCalories(0);
                 setInitialData({
                     meals: JSON.stringify([]),
                     water: 0,
                     calories: 0
                 });
-                // Reset current state to defaults or 0 if preferred
-                // For now, keeping default static data or clearing it?
-                // The user's code had static default meals. We should probably clear them if real data is expected.
-                // However, preserving existing behavior for now, just syncing initialData to current defaults if API returns null.
-                setInitialData({
-                    meals: JSON.stringify(meals),
-                    water: waterIntake,
-                    calories: dailyCalories
-                });
             }
         } catch (error) {
             console.error("Error loading diet log:", error);
-            // On error, assume no changes to avoid stuck button
+            setMeals([]);
+            setWaterIntake(0);
+            setDailyCalories(0);
             setInitialData({
-                meals: JSON.stringify(meals),
-                water: waterIntake,
-                calories: dailyCalories
+                meals: JSON.stringify([]),
+                water: 0,
+                calories: 0
             });
         }
     };
 
-    React.useEffect(() => {
+    useEffect(() => {
         loadDietData();
-    }, []);
+    }, [dateStr]);
 
     const hasUnsavedChanges = () => {
         if (!initialData) return false;
@@ -240,7 +268,7 @@ const DietLoggingScreen = ({ navigation }) => {
 
     const handleSave = async () => {
         try {
-            await api.saveDietLog(todayStr, {
+            await api.saveDietLog(dateStr, {
                 daily_calories: dailyCalories,
                 water_intake: waterIntake,
                 meals: meals
@@ -283,12 +311,25 @@ const DietLoggingScreen = ({ navigation }) => {
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
 
                 {/* 1. Header */}
-                <View style={styles.header}>
+                <View style={[styles.header, { marginBottom: 10 }]}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color="#2D3748" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Log Your Diet</Text>
                     <View style={styles.headerSpacer} />
+                </View>
+
+                {/* Date Selector */}
+                <View style={styles.dateSelector}>
+                    <TouchableOpacity onPress={() => changeDate(-1)} style={styles.dateChevron}>
+                        <Ionicons name="chevron-back" size={24} color="#2D3748" />
+                    </TouchableOpacity>
+                    <Text style={styles.dateText}>
+                        {isToday ? "Today" : selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                    <TouchableOpacity onPress={() => changeDate(1)} disabled={isToday} style={styles.dateChevron}>
+                        <Ionicons name="chevron-forward" size={24} color={isToday ? "#CBD5E0" : "#2D3748"} />
+                    </TouchableOpacity>
                 </View>
 
                 {/* 2. Daily Summary Card */}
@@ -455,7 +496,10 @@ const DietLoggingScreen = ({ navigation }) => {
                 transparent={true}
                 onRequestClose={() => setShowMealModal(false)}
             >
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView 
+                    style={styles.modalOverlay}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>
@@ -533,7 +577,7 @@ const DietLoggingScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </SafeAreaView>
     );
@@ -570,6 +614,29 @@ const styles = StyleSheet.create({
     },
     headerSpacer: {
         width: 40,
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        marginBottom: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    dateText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#2D3748',
+    },
+    dateChevron: {
+        padding: 4,
     },
     summaryCard: {
         backgroundColor: '#FFFFFF',

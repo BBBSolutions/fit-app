@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Dimensions, Image, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -27,19 +27,29 @@ const AdminDashboardScreen = ({ navigation, route }) => {
         upcomingEvents: []
     });
     const [loading, setLoading] = useState(true);
+    const [messageThreads, setMessageThreads] = useState([]);
+    const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
 
     const fetchStats = async () => {
         setLoading(true);
         try {
-            const data = await adminApi.getDashboardStats(branchId);
+            const [data, threads] = await Promise.all([
+                adminApi.getDashboardStats(branchId),
+                adminApi.getChatThreads().catch(() => [])
+            ]);
             setStats({
                 ...data,
-                // Ensure arrays are at least empty arrays if undefined
                 recentActivity: data.recentActivity || [],
                 pendingTasks: data.pendingTasks || [],
                 leadsSummary: data.leadsSummary || [],
                 upcomingEvents: data.upcomingEvents || []
             });
+            // Sort threads newest first and track unread
+            const sorted = (threads || []).sort((a, b) =>
+                new Date(b.last_message_time || 0) - new Date(a.last_message_time || 0)
+            );
+            setMessageThreads(sorted);
+            setTotalUnreadMessages(sorted.reduce((sum, t) => sum + (t.unread_count || 0), 0));
         } catch (error) {
             console.error("Failed to fetch admin stats:", error);
         } finally {
@@ -47,14 +57,30 @@ const AdminDashboardScreen = ({ navigation, route }) => {
         }
     };
 
+    const pollRef = useRef(null);
+
+    // Silent poll – only refreshes message threads, no loading spinner
+    const pollMessages = async () => {
+        try {
+            const threads = await adminApi.getChatThreads().catch(() => []);
+            const sorted = (threads || []).sort((a, b) =>
+                new Date(b.last_message_time || 0) - new Date(a.last_message_time || 0)
+            );
+            setMessageThreads(sorted);
+            setTotalUnreadMessages(sorted.reduce((sum, t) => sum + (t.unread_count || 0), 0));
+        } catch (_) {}
+    };
+
     useFocusEffect(
         React.useCallback(() => {
             if (branchId) {
                 fetchStats();
-            } else {
-                // Should not happen via normal flow, but prevents default data leak
-                // console.warn("Dashboard stats skipped: No Branch ID");
+                // Poll for new messages every 10 seconds silently
+                pollRef.current = setInterval(pollMessages, 10000);
             }
+            return () => {
+                if (pollRef.current) clearInterval(pollRef.current);
+            };
         }, [branchId])
     );
 
@@ -70,7 +96,7 @@ const AdminDashboardScreen = ({ navigation, route }) => {
         { label: 'Add Member', icon: 'person-add', route: 'AdminUserOnboarding' },
         { label: 'Add Trainer', icon: 'id-card', route: 'AdminUserOnboarding' },
         { label: 'Create Plan', icon: 'calendar', route: 'EditWorkoutPlan' },
-        { label: 'Invite Link', icon: 'link', route: 'AdminUserOnboarding' },
+        { label: 'Send Broadcast', icon: 'megaphone', route: 'AdminBroadcast' },
         { label: 'View Billing', icon: 'card', route: 'AdminBilling' },
         // { label: 'Analytics', icon: 'bar-chart', route: 'AdminAnalytics' },
     ];
@@ -152,6 +178,10 @@ const AdminDashboardScreen = ({ navigation, route }) => {
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode, branchName })}>
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBroadcast', { branchId, gymCode, branchName })}>
+                        <Ionicons name="megaphone-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Broadcast</Text>
                     </TouchableOpacity>
                     {/* <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode, branchName })}>
                         <Ionicons name="bar-chart-outline" size={20} color="#4A5568" />
@@ -260,9 +290,43 @@ const AdminDashboardScreen = ({ navigation, route }) => {
 
                             {/* Recent Activity Feed */}
                             <View style={styles.sectionCard}>
-                                <Text style={styles.cardTitle}>Recent Activity</Text>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <Text style={styles.cardTitle}>Recent Activity</Text>
+                                    <TouchableOpacity
+                                        onPress={() => navigation.navigate('AdminInbox', { branchId, gymCode, branchName })}
+                                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: totalUnreadMessages > 0 ? '#FFF5F5' : '#EBF8FF', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
+                                    >
+                                        <Ionicons name="chatbubbles" size={16} color={totalUnreadMessages > 0 ? '#E53E3E' : '#3182CE'} />
+                                        <Text style={{ fontSize: 13, fontWeight: '700', color: totalUnreadMessages > 0 ? '#E53E3E' : '#3182CE' }}>
+                                            {totalUnreadMessages > 0 ? `${totalUnreadMessages} Unread` : 'Inbox'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Message Thread Notifications */}
+                                {messageThreads.filter(t => t.unread_count > 0).map(thread => (
+                                    <TouchableOpacity
+                                        key={thread.user_id}
+                                        style={[styles.activityItem, { backgroundColor: '#FFF5F5', borderRadius: 8, marginBottom: 4, borderLeftWidth: 3, borderLeftColor: '#E53E3E' }]}
+                                        onPress={() => navigation.navigate('AdminChat', { userId: thread.user_id, userName: thread.name || thread.full_name || 'User', userRole: thread.role, branchId, gymCode, branchName })}
+                                    >
+                                        <View style={[styles.activityIcon, { backgroundColor: '#FED7D7' }]}>
+                                            <Ionicons name="chatbubble-ellipses" size={16} color="#E53E3E" />
+                                        </View>
+                                        <View style={styles.activityContent}>
+                                            <Text style={[styles.activityText, { fontWeight: '700', color: '#C53030' }]}>
+                                                {thread.name || thread.full_name || 'User'} replied ({thread.unread_count} new)
+                                            </Text>
+                                            <Text style={styles.activityTime}>
+                                                {thread.last_message_time ? new Date(thread.last_message_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                                            </Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={16} color="#E53E3E" />
+                                    </TouchableOpacity>
+                                ))}
+
                                 <View style={styles.activityList}>
-                                    {stats.recentActivity.length === 0 ? (
+                                    {stats.recentActivity.length === 0 && messageThreads.filter(t => t.unread_count > 0).length === 0 ? (
                                         <Text style={{ color: '#A0AEC0', fontStyle: 'italic', padding: 8 }}>No recent activity to show.</Text>
                                     ) : (
                                         stats.recentActivity.map(item => (

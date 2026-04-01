@@ -6,14 +6,20 @@ import {
     ScrollView,
     TouchableOpacity,
     SafeAreaView,
+    Image,
+    Alert,
+    ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../services/api';
+import { supabase } from '../../config/supabaseAuth';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme/theme';
 
 const TrainerDetails = ({ navigation }) => {
     const [trainerProfile, setTrainerProfile] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [uploadingImage, setUploadingImage] = useState(false);
 
     const [stats, setStats] = useState([
         { id: 1, label: 'Active Clients', value: '0', icon: 'people', color: colors.trainer.primary },
@@ -70,17 +76,91 @@ const TrainerDetails = ({ navigation }) => {
         }
     };
 
-    const handleLogout = async () => {
-        const { supabase } = require('../../config/supabaseAuth');
+    const handlePickImage = async () => {
         try {
-            await supabase.auth.signOut();
-            // For web compatibility
-            if (typeof window !== 'undefined') {
-                window.location.reload();
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+                return;
             }
+
+            let result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.5,
+                base64: true,
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const asset = result.assets[0];
+                await uploadImage(asset);
+            }
+        } catch (error) {
+            console.error("Error picking image:", error);
+            Alert.alert('Error', 'Could not pick the image.');
+        }
+    };
+
+    const uploadImage = async (asset) => {
+        try {
+            setUploadingImage(true);
+            const fileName = asset.fileName || `avatar-${Date.now()}.jpg`;
+            const fileType = asset.mimeType || 'image/jpeg';
+            
+            const { uploadUrl, path } = await api.getUploadUrl('user-media-public', fileName, fileType);
+            
+            const response = await fetch(asset.uri);
+            const blob = await response.blob();
+            
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: {
+                    'Content-Type': fileType,
+                },
+            });
+
+            if (!uploadRes.ok) {
+                throw new Error('Failed to upload image to storage');
+            }
+
+            const { data: { publicUrl } } = supabase.storage.from('user-media-public').getPublicUrl(path);
+
+            await api.updateProfile({ avatar_url: publicUrl });
+
+            setTrainerProfile(prev => ({ 
+                ...prev, 
+                avatarUrl: publicUrl,
+                avatar_url: publicUrl 
+            }));
+            Alert.alert("Success", "Profile picture updated!");
+
+        } catch (error) {
+            console.error("Upload Error:", error);
+            Alert.alert("Error", "Could not upload profile picture.");
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            // 1. Clear Supabase Session
+            const { supabase } = require('../../config/supabaseAuth');
+            await supabase.auth.signOut();
+
+            // 2. Clear Custom MVP Token (AsyncStorage)
+            await api.removeCustomToken();
+
+            console.log("Logout successful, redirecting...");
+
+            // 3. Navigate back to start
             navigation.replace('GymCode');
         } catch (error) {
             console.error('Logout failed:', error);
+            // Fallback navigation even if logout fails
+            navigation.replace('GymCode');
         }
     };
 
@@ -94,9 +174,18 @@ const TrainerDetails = ({ navigation }) => {
                 <View style={styles.header}>
                     <View style={styles.headerContent}>
                         <View style={styles.avatarContainer}>
-                            <View style={styles.avatar}>
-                                <Ionicons name="person" size={48} color={colors.trainer.primary} />
-                            </View>
+                            <TouchableOpacity style={styles.avatar} onPress={handlePickImage} disabled={uploadingImage}>
+                                {(trainerProfile?.avatarUrl || trainerProfile?.avatar_url) ? (
+                                    <Image source={{ uri: trainerProfile.avatarUrl || trainerProfile.avatar_url }} style={styles.avatarImage} />
+                                ) : (
+                                    <Ionicons name="person" size={48} color={colors.trainer.primary} />
+                                )}
+                                {uploadingImage && (
+                                    <View style={styles.uploadingOverlay}>
+                                        <ActivityIndicator color={colors.white} />
+                                    </View>
+                                )}
+                            </TouchableOpacity>
                         </View>
                         <Text style={styles.trainerName}>
                             {trainerProfile?.fullName || 'Trainer Profile'}
@@ -106,7 +195,7 @@ const TrainerDetails = ({ navigation }) => {
                         </Text>
                         {trainerProfile?.certifications && (
                             <View style={styles.certificationBadge}>
-                                <Ionicons name="ribbon" size={14} color={colors.white} />
+                                <Ionicons name="ribbon" size={14} color="#3182CE" />
                                 <Text style={styles.certificationText}>Certified Professional</Text>
                             </View>
                         )}
@@ -238,7 +327,7 @@ const Divider = () => <View style={styles.divider} />;
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: colors.trainer.background,
+        backgroundColor: '#F5F7FA',
     },
     container: {
         flex: 1,
@@ -247,10 +336,12 @@ const styles = StyleSheet.create({
         paddingBottom: 100,
     },
     header: {
-        backgroundColor: colors.trainer.primary,
+        backgroundColor: '#FFFFFF',
         paddingTop: spacing.huge,
         paddingBottom: spacing.xxxl,
         alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
     },
     headerContent: {
         alignItems: 'center',
@@ -262,33 +353,44 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 50,
-        backgroundColor: colors.white,
+        backgroundColor: '#EDF2F7',
         alignItems: 'center',
         justifyContent: 'center',
+        overflow: 'hidden',
         ...shadows.lg,
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     trainerName: {
         fontSize: typography.fontSize.xxl,
         fontWeight: typography.fontWeight.bold,
-        color: colors.white,
+        color: '#1A202C',
         marginBottom: spacing.xs,
     },
     trainerSpecialization: {
         fontSize: typography.fontSize.base,
-        color: 'rgba(255, 255, 255, 0.9)',
+        color: '#718096',
         marginBottom: spacing.md,
     },
     certificationBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        backgroundColor: '#EBF8FF',
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.xs,
         borderRadius: borderRadius.md,
     },
     certificationText: {
         fontSize: typography.fontSize.sm,
-        color: colors.white,
+        color: '#3182CE',
         fontWeight: typography.fontWeight.semibold,
         marginLeft: spacing.xs,
     },

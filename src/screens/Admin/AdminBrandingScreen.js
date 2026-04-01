@@ -170,6 +170,10 @@ const AdminBrandingScreen = ({ navigation, route }) => {
                         <Ionicons name="settings-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Settings</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBroadcast', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
+                        <Ionicons name="megaphone-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Broadcast</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode: route.params?.gymCode, branchName: route.params?.branchName })}>
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>

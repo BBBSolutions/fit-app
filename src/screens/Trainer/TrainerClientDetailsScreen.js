@@ -23,6 +23,25 @@ import { colors } from '../../theme/theme';
 import { useChat } from '../../context/ChatContext';
 import TrainerCreateWorkoutModal from '../../components/Trainer/TrainerCreateWorkoutModal';
 
+const formatDateTime = (dateString) => {
+    if (!dateString || dateString === 'Unknown') return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    
+    return `${month} ${day}, ${year}, ${hours}:${minutes} ${ampm}`;
+};
+
 const TrainerClientDetailsScreen = ({ route, navigation }) => {
     // Get params - handle both full client object and just ID
     const { client, clientId, initialTab } = route.params || {};
@@ -213,7 +232,7 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
         <View style={styles.assignedCard}>
             <View style={{ flex: 1 }}>
                 <Text style={styles.workoutName}>{item.workout?.title || 'Unknown Workout'}</Text>
-                <Text style={styles.workoutMeta}>Assigned: {new Date(item.assigned_at).toLocaleDateString()}</Text>
+                <Text style={styles.workoutMeta}>Assigned: {formatDateTime(item.assigned_at)}</Text>
             </View>
             <View style={styles.statusTag}>
                 <Text style={styles.statusTagText}>{item.status}</Text>
@@ -282,7 +301,7 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                                 <Text style={styles.statLabel}>Last Active</Text>
                                 <Text style={styles.statValue}>
                                     {clientData.lastActive && clientData.lastActive !== 'Unknown'
-                                        ? new Date(clientData.lastActive).toLocaleDateString()
+                                        ? formatDateTime(clientData.lastActive)
                                         : 'Never'}
                                 </Text>
                             </View>
@@ -364,7 +383,11 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                     </ScrollView>
                 ) : (
                     // Messages Tab Full Screen View
-                    <View style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <KeyboardAvoidingView
+                        style={{ flex: 1 }}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                    >
                         {/* Tabs Repeater for navigation consistency */}
                         <View style={styles.tabContainer}>
                             {['Overview', 'Workouts', 'Messages'].map(tab => (
@@ -383,6 +406,7 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                             contentContainerStyle={{ padding: 20, flexGrow: 1 }}
                             ref={scrollViewRef}
                             onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                            keyboardShouldPersistTaps="handled"
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
                         >
                             {loadingMessages && <ActivityIndicator />}
@@ -406,12 +430,13 @@ const TrainerClientDetailsScreen = ({ route, navigation }) => {
                                 placeholder="Type a message..."
                                 value={newMessage}
                                 onChangeText={setNewMessage}
+                                multiline
                             />
                             <TouchableOpacity onPress={handleSendMessage} style={styles.sendButton}>
                                 <Ionicons name="send" size={24} color="#FFF" />
                             </TouchableOpacity>
                         </View>
-                    </View>
+                    </KeyboardAvoidingView>
                 )}
 
             </View>
@@ -463,7 +488,7 @@ const styles = StyleSheet.create({
     statusTagText: { color: '#38B2AC', fontSize: 12, fontWeight: '700' },
     emptyText: { textAlign: 'center', color: '#A0AEC0', marginTop: 20 },
     chatContainer: { flex: 1, backgroundColor: '#F0F4F8' },
-    inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: Platform.OS === 'ios' ? 30 : 12 },
+    inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: 12 },
     input: { flex: 1, backgroundColor: '#EDF2F7', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 16, color: '#2D3748', marginRight: 12 },
     sendButton: { backgroundColor: '#3182CE', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
     messageBubble: { maxWidth: '80%', padding: 12, borderRadius: 16, marginBottom: 12 },

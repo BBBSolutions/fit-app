@@ -114,7 +114,7 @@ serve(async (req) => {
                 if (userIds.length > 0) {
                     const { data: pData, error: pError } = await supabaseClient
                         .from('profiles')
-                        .select('user_id, name, full_name, phone_number, address, assigned_trainer_id')
+                        .select('user_id, name, full_name, phone_number, address, assigned_trainer_id, assigned_session')
                         .in('user_id', userIds);
 
                     if (pError) throw pError;
@@ -171,7 +171,8 @@ serve(async (req) => {
                         pt_plan_id: subInfo.pt_plan_id,
                         address: profile.address,
                         assigned_trainer_id: profile.assigned_trainer_id,
-                        assigned_trainer_name: null
+                        assigned_trainer_name: null,
+                        assigned_session: profile.assigned_session || null
                     };
                 });
 
@@ -188,7 +189,8 @@ serve(async (req) => {
                     pt_plan_id: inv.pt_plan_id,
                     address: inv.address,
                     assigned_trainer_id: inv.assigned_trainer_id,
-                    assigned_trainer_name: null
+                    assigned_trainer_name: null,
+                    assigned_session: inv.assigned_session || null
                 }));
 
                 result = [...mappedActive, ...mappedPending].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -416,7 +418,8 @@ serve(async (req) => {
                         role: payload.role?.toLowerCase() || 'member',
                         gym_code: gymCode,
                         address: payload.address,
-                        assigned_trainer_id: payload.assigned_trainer_id
+                        assigned_trainer_id: payload.assigned_trainer_id,
+                        assigned_session: payload.assigned_session
                     });
 
                 if (profileErr) throw profileErr;
@@ -489,7 +492,8 @@ serve(async (req) => {
                         pt_plan_id: payload.pt_plan_id,
                         address: payload.address,
                         permissions: payload.permissions,
-                        assigned_trainer_id: payload.assigned_trainer_id
+                        assigned_trainer_id: payload.assigned_trainer_id,
+                        assigned_session: payload.assigned_session
                     })
                     .eq('id', payload.id)
                     .maybeSingle();
@@ -508,6 +512,7 @@ serve(async (req) => {
                 if (payload.role) profileUpdates.role = payload.role.toLowerCase();
                 if (payload.address) profileUpdates.address = payload.address;
                 if (payload.assigned_trainer_id !== undefined) profileUpdates.assigned_trainer_id = payload.assigned_trainer_id;
+                if (payload.assigned_session !== undefined) profileUpdates.assigned_session = payload.assigned_session;
 
                 const { data: profileUpdate, error: profileError } = await supabaseClient
                     .from('profiles')

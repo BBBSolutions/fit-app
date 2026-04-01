@@ -6,8 +6,12 @@ import {
     ScrollView,
     TouchableOpacity,
     SafeAreaView,
+    Image,
+    Alert,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../services/api';
 import { supabase } from '../../config/supabaseAuth';
 import { useFocusEffect, CommonActions } from '@react-navigation/native';
@@ -25,7 +29,10 @@ const ProfileScreen = ({ navigation }) => {
         fitnessLevel: '',
         primaryGoal: '',
         planType: 'Free',
+        avatarUrl: '',
     });
+    
+    const [uploadingImage, setUploadingImage] = React.useState(false);
 
     // Backend Integration
     useFocusEffect(
@@ -37,6 +44,7 @@ const ProfileScreen = ({ navigation }) => {
                         setUserData(prev => ({
                             ...prev,
                             ...data,
+                            avatarUrl: data.avatarUrl || data.avatar_url || '',
                             // Handle potential mismatched field names or formats here if needed
                         }));
                     }
@@ -130,6 +138,75 @@ const ProfileScreen = ({ navigation }) => {
         console.log('Upgrade Plan');
     };
 
+    const handlePickImage = async () => {
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+                return;
+            }
+
+            let result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'], // Updated to use array format
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.5,
+                base64: true,
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const asset = result.assets[0];
+                await uploadImage(asset);
+            }
+        } catch (error) {
+            console.error("Error picking image:", error);
+            Alert.alert('Error', 'Could not pick the image.');
+        }
+    };
+
+    const uploadImage = async (asset) => {
+        try {
+            setUploadingImage(true);
+            const fileName = asset.fileName || `avatar-${Date.now()}.jpg`;
+            const fileType = asset.mimeType || 'image/jpeg';
+            
+            // 1. Get presigned URL
+            const { uploadUrl, path } = await api.getUploadUrl('user-media-public', fileName, fileType);
+            
+            // 2. Fetch the local image as blob
+            const response = await fetch(asset.uri);
+            const blob = await response.blob();
+            
+            // 3. Upload to Supabase Storage via presigned URL
+            const uploadRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: blob,
+                headers: {
+                    'Content-Type': fileType,
+                },
+            });
+
+            if (!uploadRes.ok) {
+                throw new Error('Failed to upload image to storage');
+            }
+
+            // 4. Extract public URL assuming the bucket is public and standard path structure
+            const { data: { publicUrl } } = supabase.storage.from('user-media-public').getPublicUrl(path);
+
+            // 5. Save to database
+            await api.updateProfile({ avatar_url: publicUrl });
+
+            setUserData(prev => ({ ...prev, avatarUrl: publicUrl }));
+            Alert.alert("Success", "Profile picture updated!");
+
+        } catch (error) {
+            console.error("Upload Error:", error);
+            Alert.alert("Error", "Could not upload profile picture.");
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
     const isNotificationsEnabled = userData.preferences?.notificationsEnabled ?? true;
     const currentTheme = userData.preferences?.theme || 'Light';
 
@@ -142,9 +219,18 @@ const ProfileScreen = ({ navigation }) => {
 
                 {/* 2. User Info Card */}
                 <View style={styles.userCard}>
-                    <View style={styles.profilePicture}>
-                        <Ionicons name="person" size={40} color="#FFFFFF" />
-                    </View>
+                    <TouchableOpacity style={styles.profilePicture} onPress={handlePickImage} disabled={uploadingImage}>
+                        {userData.avatarUrl ? (
+                            <Image source={{ uri: userData.avatarUrl }} style={styles.profileImage} />
+                        ) : (
+                            <Ionicons name="person" size={40} color="#FFFFFF" />
+                        )}
+                        {uploadingImage && (
+                            <View style={styles.uploadingOverlay}>
+                                <Text style={styles.uploadingText}>...</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
                     <View style={styles.userInfo}>
                         <Text style={styles.userName}>{userData.name}</Text>
                         <Text style={styles.gymName}>{userData.gymName}</Text>
@@ -300,6 +386,21 @@ const styles = StyleSheet.create({
         backgroundColor: '#3182CE',
         justifyContent: 'center',
         alignItems: 'center',
+        overflow: 'hidden',
+    },
+    profileImage: {
+        width: '100%',
+        height: '100%',
+    },
+    uploadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    uploadingText: {
+        color: '#FFF',
+        fontWeight: 'bold',
     },
     userInfo: {
         flex: 1,

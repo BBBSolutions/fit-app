@@ -6,15 +6,20 @@ import {
     ScrollView,
     TouchableOpacity,
     SafeAreaView,
+    Platform,
+    RefreshControl,
+    Animated,
     Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { useChat } from '../../context/ChatContext';
 import { useFocusEffect } from '@react-navigation/native';
 
 const MemberHomeDashboardScreen = ({ navigation }) => {
-    const { unreadCount } = useChat();
+    const { unreadCount, hasUnread } = useChat();
     const [userName, setUserName] = useState('');
+    const [userImage, setUserImage] = useState(null);
     const [stats, setStats] = useState({
         streak: 0,
         calories: 0,
@@ -22,117 +27,191 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
         loading: true
     });
     const [todaysWorkout, setTodaysWorkout] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
+
+    // In-app notification state
+    const [notificationVisible, setNotificationVisible] = useState(false);
+    const [notificationMessage, setNotificationMessage] = useState('');
+    const notificationAnim = React.useRef(new Animated.Value(-100)).current;
+
+    const showInAppNotification = (message) => {
+        setNotificationMessage(message);
+        setNotificationVisible(true);
+        
+        // Slide in
+        Animated.spring(notificationAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 10,
+        }).start();
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            Animated.timing(notificationAnim, {
+                toValue: -100,
+                duration: 300,
+                useNativeDriver: true,
+            }).start(() => {
+                setNotificationVisible(false);
+            });
+        }, 5000);
+    };
 
 
-    useFocusEffect(
-        React.useCallback(() => {
-            api.getProfile().then(data => {
-                const name = data?.name || data?.first_name || 'Member';
-                setUserName(name);
-            }).catch(err => console.error("Home load error:", err));
+    const loadDashboardData = async () => {
+        try {
+            const data = await api.getProfile();
+            const name = data?.name || data?.first_name || 'Member';
+            setUserName(name);
+            setUserImage(data?.avatarUrl || data?.avatar_url || data?.image || null);
+        } catch (err) {
+            console.error("Home load error:", err);
+        }
 
-            // Fetch Assignments
-            api.getAssignedWorkouts('').then(data => {
-                if (data && data.length > 0) {
+        // Fetch Assignments
+        try {
+            const data = await api.getAssignedWorkouts('');
+            if (data && data.length > 0) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const todaysAssignment = data.find(assignment => {
+                    const date = new Date(assignment.scheduled_date || assignment.created_at || Date.now());
+                    date.setHours(0, 0, 0, 0);
+                    return date.getTime() === today.getTime();
+                });
+
+                setTodaysWorkout(todaysAssignment ? {
+                    ...todaysAssignment.workout,
+                    status: todaysAssignment.status,
+                    assignmentId: todaysAssignment.id
+                } : null);
+            } else {
+                setTodaysWorkout(null);
+            }
+        } catch (err) {
+            console.error("Home workout load error:", err);
+        }
+
+        // Fetch Stats (Last 365 days)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 365);
+
+        try {
+            const sessions = await api.getWorkoutStats(startDate.toISOString(), endDate.toISOString());
+            let totalCalories = 0;
+            let currentStreak = 0;
+
+            if (sessions && Array.isArray(sessions)) {
+                // 1. Total Sessions
+                const totalSessions = sessions.length;
+
+                // 2. Calories
+                totalCalories = sessions.reduce((acc, session) => {
+                    const cals = session.metrics?.caloriesBurned || session.metrics?.calories || 0;
+                    return acc + cals;
+                }, 0);
+
+                // 3. Streak Calculation
+                const sortedSessions = sessions
+                    .map(s => new Date(s.started_at || s.created_at))
+                    .sort((a, b) => b - a);
+
+                if (sortedSessions.length > 0) {
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
 
-                    const todaysAssignment = data.find(assignment => {
-                        const date = new Date(assignment.scheduled_date || assignment.created_at || Date.now());
-                        date.setHours(0, 0, 0, 0);
-                        return date.getTime() === today.getTime();
+                    const uniqueDates = [];
+                    sortedSessions.forEach(d => {
+                        d.setHours(0, 0, 0, 0);
+                        const t = d.getTime();
+                        if (!uniqueDates.includes(t)) uniqueDates.push(t);
                     });
 
-                    setTodaysWorkout(todaysAssignment ? {
-                        ...todaysAssignment.workout,
-                        status: todaysAssignment.status,
-                        assignmentId: todaysAssignment.id
-                    } : null);
-                } else {
-                    setTodaysWorkout(null);
-                }
-            }).catch(err => console.error("Home workout load error:", err));
+                    const latest = uniqueDates[0];
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
 
-            // Fetch Stats (Last 365 days)
-            const endDate = new Date();
-            const startDate = new Date();
-            startDate.setDate(startDate.getDate() - 365);
+                    if (latest === today.getTime() || latest === yesterday.getTime()) {
+                        currentStreak = 1;
+                        let previousDate = new Date(latest);
 
-            api.getWorkoutStats(startDate.toISOString(), endDate.toISOString())
-                .then(sessions => {
-                    let totalCalories = 0;
-                    let currentStreak = 0;
+                        for (let i = 1; i < uniqueDates.length; i++) {
+                            const date = new Date(uniqueDates[i]);
+                            const expectedPrev = new Date(previousDate);
+                            expectedPrev.setDate(expectedPrev.getDate() - 1);
 
-                    if (sessions && Array.isArray(sessions)) {
-                        // 1. Total Sessions
-                        const totalSessions = sessions.length;
-
-                        // 2. Calories
-                        totalCalories = sessions.reduce((acc, session) => {
-                            const cals = session.metrics?.caloriesBurned || session.metrics?.calories || 0;
-                            return acc + cals;
-                        }, 0);
-
-                        // 3. Streak Calculation
-                        // Sort by date descending
-                        const sortedSessions = sessions
-                            .map(s => new Date(s.started_at || s.created_at))
-                            .sort((a, b) => b - a);
-
-                        if (sortedSessions.length > 0) {
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-
-                            const uniqueDates = [];
-                            sortedSessions.forEach(d => {
-                                d.setHours(0, 0, 0, 0);
-                                const t = d.getTime();
-                                if (!uniqueDates.includes(t)) uniqueDates.push(t);
-                            });
-
-                            // Check if latest is today or yesterday to start streak
-                            const latest = uniqueDates[0];
-                            const yesterday = new Date(today);
-                            yesterday.setDate(yesterday.getDate() - 1);
-
-                            if (latest === today.getTime() || latest === yesterday.getTime()) {
-                                currentStreak = 1;
-                                let previousDate = new Date(latest);
-
-                                for (let i = 1; i < uniqueDates.length; i++) {
-                                    const date = new Date(uniqueDates[i]);
-                                    const expectedPrev = new Date(previousDate);
-                                    expectedPrev.setDate(expectedPrev.getDate() - 1);
-
-                                    if (date.getTime() === expectedPrev.getTime()) {
-                                        currentStreak++;
-                                        previousDate = date;
-                                    } else {
-                                        break;
-                                    }
-                                }
+                            if (date.getTime() === expectedPrev.getTime()) {
+                                currentStreak++;
+                                previousDate = date;
                             } else {
-                                currentStreak = 0;
+                                break;
                             }
                         }
-
-                        setStats({
-                            streak: currentStreak,
-                            calories: totalCalories,
-                            sessions: totalSessions,
-                            loading: false
-                        });
                     } else {
-                        setStats({ streak: 0, calories: 0, sessions: 0, loading: false });
+                        currentStreak = 0;
                     }
-                })
-                .catch(err => {
-                    console.error("Failed to fetch stats:", err);
-                    setStats(prev => ({ ...prev, loading: false }));
-                });
+                }
 
+                setStats({
+                    streak: currentStreak,
+                    calories: totalCalories,
+                    sessions: totalSessions,
+                    loading: false
+                });
+            } else {
+                setStats({ streak: 0, calories: 0, sessions: 0, loading: false });
+            }
+        } catch (err) {
+            console.error("Failed to fetch stats:", err);
+            setStats(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    useFocusEffect(
+        React.useCallback(() => {
+            loadDashboardData();
         }, [])
     );
+
+    const onRefresh = React.useCallback(() => {
+        setRefreshing(true);
+        loadDashboardData().finally(() => setRefreshing(false));
+    }, []);
+
+    // Auto-refresh: Poll for new assignments every 15 seconds
+    const lastAssignmentCountRef = React.useRef(null);
+    
+    React.useEffect(() => {
+        const checkForNewAssignments = async () => {
+            try {
+                const assignments = await api.getAssignedWorkouts('');
+                const currentCount = assignments ? assignments.length : 0;
+
+                if (lastAssignmentCountRef.current !== null && currentCount > lastAssignmentCountRef.current) {
+                    const newCount = currentCount - lastAssignmentCountRef.current;
+                    console.log('Auto-refresh: New assignment(s) detected!', newCount);
+                    showInAppNotification(
+                        newCount === 1
+                            ? '🏋️ New workout assigned! Tap to view.'
+                            : `🏋️ ${newCount} new workouts assigned! Tap to view.`
+                    );
+                    loadDashboardData();
+                } else if (lastAssignmentCountRef.current !== null && currentCount !== lastAssignmentCountRef.current) {
+                    loadDashboardData();
+                }
+                lastAssignmentCountRef.current = currentCount;
+            } catch (err) {
+                // Silently ignore polling errors
+            }
+        };
+
+        const interval = setInterval(checkForNewAssignments, 15000); // every 15 seconds
+
+        return () => clearInterval(interval);
+    }, []);
 
     const handleStartWorkout = () => {
         if (todaysWorkout) {
@@ -152,7 +231,42 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            {/* In-App Notification Banner */}
+            {notificationVisible && (
+                <Animated.View style={[styles.notificationBanner, { transform: [{ translateY: notificationAnim }] }]}>
+                    <TouchableOpacity
+                        style={styles.notificationContent}
+                        onPress={() => {
+                            setNotificationVisible(false);
+                            navigation.navigate('Workouts');
+                        }}
+                        activeOpacity={0.8}
+                    >
+                        <View style={styles.notificationIconContainer}>
+                            <Ionicons name="fitness" size={20} color="#FFFFFF" />
+                        </View>
+                        <Text style={styles.notificationText}>{notificationMessage}</Text>
+                        <TouchableOpacity
+                            onPress={() => {
+                                Animated.timing(notificationAnim, {
+                                    toValue: -100,
+                                    duration: 200,
+                                    useNativeDriver: true,
+                                }).start(() => setNotificationVisible(false));
+                            }}
+                        >
+                            <Ionicons name="close" size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Animated.View>
+            )}
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={styles.contentContainer}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3182CE']} tintColor="#3182CE" />
+                }
+            >
 
                 {/* 1. Header */}
                 <View style={styles.header}>
@@ -160,9 +274,15 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                         <Text style={styles.greeting}>Good Morning,</Text>
                         <Text style={styles.userName}>{userName || 'Loading...'}</Text>
                     </View>
-                    <View style={styles.logoPlaceholder}>
-                        <Text style={styles.logoText}>GYM</Text>
-                    </View>
+                    <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+                        <View style={styles.logoPlaceholder}>
+                            {userImage ? (
+                                <Image source={{ uri: userImage }} style={styles.profileImage} />
+                            ) : (
+                                <Ionicons name="person" size={24} color="#FFF" />
+                            )}
+                        </View>
+                    </TouchableOpacity>
                 </View>
 
                 {/* 2. Today's Workout Card */}
@@ -271,11 +391,36 @@ const MemberHomeDashboardScreen = ({ navigation }) => {
                     </View>
                     <View style={[styles.quickActionsRow, { marginTop: 12 }]}>
                         <TouchableOpacity
-                            style={styles.actionButton}
+                            style={[
+                                styles.actionButton,
+                                { width: '100%', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, paddingVertical: 18 },
+                                hasUnread && { borderLeftWidth: 4, borderLeftColor: '#38A169', backgroundColor: '#F0FFF4' }
+                            ]}
                             onPress={() => navigation.navigate('Messages')}
                         >
-                            <Text style={styles.actionIcon}>💬</Text>
-                            <Text style={styles.actionText}>Trainer</Text>
+                            {/* Icon with green dot */}
+                            <View style={{ position: 'relative' }}>
+                                <Text style={[styles.actionIcon, { marginBottom: 0 }, hasUnread && { color: '#38A169' }]}>💬</Text>
+                                {hasUnread && (
+                                    <View style={{
+                                        position: 'absolute', top: -4, right: -6,
+                                        backgroundColor: '#38A169', borderRadius: 10,
+                                        minWidth: 18, height: 18, justifyContent: 'center',
+                                        alignItems: 'center', paddingHorizontal: 4,
+                                        borderWidth: 1.5, borderColor: '#FFF'
+                                    }}>
+                                        <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{unreadCount}</Text>
+                                    </View>
+                                )}
+                            </View>
+                            <View>
+                                <Text style={[styles.actionText, { fontSize: 14 }, hasUnread && { color: '#276749', fontWeight: '700' }]}>Message Trainer</Text>
+                                {hasUnread && (
+                                    <Text style={{ fontSize: 11, color: '#38A169', fontWeight: '600', marginTop: 1 }}>
+                                        {unreadCount} new message{unreadCount > 1 ? 's' : ''}
+                                    </Text>
+                                )}
+                            </View>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -327,6 +472,11 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontWeight: 'bold',
         fontSize: 10,
+    },
+    profileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
     },
     section: {
         marginBottom: 24,
@@ -394,6 +544,9 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         alignItems: 'center',
         marginBottom: 12,
+        width: '100%',
+        maxWidth: 350,
+        alignSelf: 'center',
     },
     startButtonText: {
         color: '#FFFFFF',
@@ -482,6 +635,40 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#4A5568',
         textAlign: 'center',
+    },
+    notificationBanner: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+        paddingTop: Platform.OS === 'ios' ? 0 : 10,
+        paddingHorizontal: 16,
+        paddingBottom: 10,
+        backgroundColor: '#3182CE',
+    },
+    notificationContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        borderRadius: 12,
+    },
+    notificationIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    notificationText: {
+        flex: 1,
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
     },
 
 });

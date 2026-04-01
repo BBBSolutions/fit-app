@@ -42,7 +42,7 @@ serve(async (req) => {
             const { data, error } = await supabaseClient
                 .storage
                 .from(bucket)
-                .createSignedUrl(filePath, 300); // 5 mins
+                .createSignedUploadUrl(filePath);
 
             if (error) throw error;
 

@@ -4,14 +4,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CUSTOM_TOKEN_KEY = 'fitapp_custom_jwt';
 
+// Returns true if a JWT token string is expired
+const isTokenExpired = (token) => {
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (!payload.exp) return false;
+        return Date.now() >= (payload.exp - 30) * 1000;
+    } catch (e) {
+        return true;
+    }
+};
+
 const getHeaders = async () => {
     // 1. Try Custom JWT first (MVP Auth)
     const customToken = await AsyncStorage.getItem(CUSTOM_TOKEN_KEY);
     if (customToken) {
-        return {
-            'Authorization': `Bearer ${customToken}`,
-            'Content-Type': 'application/json'
-        };
+        if (isTokenExpired(customToken)) {
+            console.warn('Admin custom JWT expired, clearing stored token.');
+            await AsyncStorage.removeItem(CUSTOM_TOKEN_KEY);
+            // Fall through to Supabase session below
+        } else {
+            return {
+                'Authorization': `Bearer ${customToken}`,
+                'Content-Type': 'application/json'
+            };
+        }
     }
 
     // 2. Fallback to Supabase Session
@@ -182,7 +199,14 @@ export const adminApi = {
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(errorText || 'Failed to join gym');
+            let errorMessage = errorText;
+            try {
+                const errorObj = JSON.parse(errorText);
+                if (errorObj.error) errorMessage = errorObj.error;
+            } catch (e) {
+                // Not JSON, use raw text
+            }
+            throw new Error(errorMessage || 'Failed to join gym');
         }
         return response.json();
     },
@@ -248,6 +272,49 @@ export const adminApi = {
     },
     addLeadLog: async (log, branchId) => {
         return adminApi._post('admin-leads', { action: 'add_log', payload: log, branchId });
+    },
+
+    // BROADCAST
+    sendBroadcastMessage: async (payload) => {
+        // payload: { branchId, role, userIds, title, message }
+        return adminApi._post('admin-broadcast', payload);
+    },
+
+    // MESSAGING - Admin Inbox
+    getChatThreads: async () => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/threads?_t=${Date.now()}`, { method: 'GET', headers });
+        if (!response.ok) return [];
+        return response.json();
+    },
+
+    getMessages: async (targetUserId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/list?userId=${targetUserId}&_t=${Date.now()}`, { method: 'GET', headers });
+        if (!response.ok) throw new Error('Failed to fetch messages');
+        return response.json();
+    },
+
+    sendMessage: async (receiverId, content) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/send`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ receiverId, content })
+        });
+        if (!response.ok) throw new Error('Failed to send message');
+        return response.json();
+    },
+
+    markMessagesRead: async (senderId) => {
+        const headers = await getHeaders();
+        const response = await fetch(`${API_BASE_URL}/messages/mark-read`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ senderId })
+        });
+        if (!response.ok) return;
+        return response.json();
     },
 
     // CONTENT

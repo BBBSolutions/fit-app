@@ -48,10 +48,10 @@ serve(async (req) => {
             // 1. Find recent log
             let query = supabaseClient
                 .from('workout_logs')
-                .select('workout_assignment_id, created_at, exercise_name')
+                .select('workout_assignment_id, logged_at, exercise_name')
                 .eq('user_id', userId) // Security
                 .neq('workout_assignment_id', excludeAssignmentId || '00000000-0000-0000-0000-000000000000') // Ensure Valid UUID for NOT EQ
-                .order('created_at', { ascending: false })
+                .order('logged_at', { ascending: false })
                 .limit(5); // Fetch a few to debug
 
             if (exerciseId) {
@@ -113,10 +113,66 @@ serve(async (req) => {
                     workout_id,
                     status: 'assigned'
                 })
-                .select()
+                .select('*, workout:workouts(title)')
                 .single();
 
             if (error) throw error;
+
+            // --- Push Notification Trigger ---
+            try {
+                console.log("Notification: Looking up push_token for client_id:", client_id);
+                
+                // 1. Get Receiver's (Client's) Push Token
+                const { data: receiverProfile, error: profileError } = await supabaseClient
+                    .from('profiles')
+                    .select('push_token, name')
+                    .eq('user_id', client_id)
+                    .single();
+
+                console.log("Notification: Client profile lookup result:", JSON.stringify(receiverProfile), "Error:", profileError);
+
+                if (receiverProfile?.push_token) {
+                    // 2. Get Trainer's Name
+                    const { data: senderProfile } = await supabaseClient
+                        .from('profiles')
+                        .select('name')
+                        .eq('user_id', userId)
+                        .single();
+
+                    const trainerName = senderProfile?.name || 'Your Trainer';
+                    const workoutTitle = data.workout?.title || 'a new workout';
+
+                    const notificationPayload = {
+                        to: receiverProfile.push_token,
+                        sound: 'default',
+                        title: 'New Workout Assigned!',
+                        body: `${trainerName} has assigned ${workoutTitle} to you.`,
+                        data: { screen: 'Workouts', assignmentId: data.id },
+                    };
+
+                    console.log("Notification: Sending to Expo:", JSON.stringify(notificationPayload));
+
+                    // 3. Send to Expo
+                    const expoPushResponse = await fetch('https://exp.host/--/api/v2/push/send', {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Accept-encoding': 'gzip, deflate',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(notificationPayload),
+                    });
+                    
+                    const expoResult = await expoPushResponse.text();
+                    console.log("Notification: Expo API response:", expoPushResponse.status, expoResult);
+                } else {
+                    console.log("Notification: No push_token found for client. Client needs to be on a physical device and have notifications enabled.");
+                }
+            } catch (notifyError) {
+                console.error("Notification failed for workout assignment:", notifyError);
+            }
+            // ---------------------------------
+
             return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
@@ -300,10 +356,13 @@ serve(async (req) => {
         }
 
         if (lastPart === 'prs' && req.method === 'GET') {
+            // Allow fetching for another user if user_id is passed (e.g. Trainer viewing Client)
+            const targetUserId = url.searchParams.get('user_id') || userId;
+
             const { data, error } = await supabaseClient
                 .from('user_personal_records')
                 .select('*')
-                .eq('user_id', userId)
+                .eq('user_id', targetUserId)
                 .order('max_weight', { ascending: false })
                 .limit(10); // Top 10 heavy lifts
 

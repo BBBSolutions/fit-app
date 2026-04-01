@@ -1,10 +1,43 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { api } from '../../services/api';
 
 const WelcomeScreen = ({ navigation }) => {
     const [view, setView] = useState('main');
+
+    React.useEffect(() => {
+        const restoreSession = async () => {
+            try {
+                const token = await AsyncStorage.getItem('fitapp_custom_jwt');
+                if (!token) return; // No stored token, stay on welcome screen
+
+                const profile = await api.getProfile();
+                if (profile && profile.roles) {
+                    if (profile.roles.includes('trainer') || profile.roles.includes('owner')) {
+                        navigation.replace('TrainerMainApp');
+                    } else {
+                        navigation.replace('MainApp');
+                    }
+                } else if (profile) {
+                    navigation.replace('MainApp');
+                }
+            } catch (err) {
+                const errMsg = err?.message || '';
+                const isAuthError = errMsg.includes('expired') || errMsg.includes('Unauthorized') || errMsg.includes('invalid JWT');
+                if (isAuthError) {
+                    console.warn('Stored session is expired or invalid, clearing token.');
+                    await AsyncStorage.removeItem('fitapp_custom_jwt');
+                    // Stay on Welcome screen so user can log in again
+                } else {
+                    console.log('No valid session to restore', err);
+                }
+            }
+        };
+        restoreSession();
+    }, []);
 
     const renderMain = () => (
         <View style={styles.content}>

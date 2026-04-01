@@ -57,10 +57,13 @@ serve(async (req) => {
             const startDate = url.searchParams.get('start_date');
             const endDate = url.searchParams.get('end_date');
 
+            // Allow fetching for another user if user_id is passed (e.g. Trainer viewing Client)
+            const targetUserId = url.searchParams.get('user_id') || userId;
+
             let query = supabaseClient
                 .from('sessions')
                 .select('id,started_at,completed_at,metrics')
-                .eq('user_id', userId)
+                .eq('user_id', targetUserId)
                 .eq('status', 'completed')
                 .order('started_at', { ascending: false });
 

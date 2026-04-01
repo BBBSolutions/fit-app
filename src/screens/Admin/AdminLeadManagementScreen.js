@@ -235,6 +235,10 @@ const AdminLeadManagementScreen = ({ navigation, route }) => {
                         <Ionicons name="card-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Billing</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminBroadcast', { branchId, gymCode, branchName })}>
+                        <Ionicons name="megaphone-outline" size={20} color="#4A5568" />
+                        <Text style={styles.sidebarItemText}>Broadcast</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.sidebarItem} onPress={() => navigation.navigate('AdminSettings', { branchId, gymCode, branchName })}>
                         <Ionicons name="settings-outline" size={20} color="#4A5568" />
                         <Text style={styles.sidebarItemText}>Settings</Text>

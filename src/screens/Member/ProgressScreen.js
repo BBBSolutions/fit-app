@@ -348,7 +348,7 @@ const ProgressScreen = () => {
                         </View>
                     </View>
 
-                    {chartData.length > 1 ? (
+                    {chartData.length > 0 ? (
                         <LineChart
                             data={{
                                 labels: chartData.map(w => w.label).filter((_, i) => i % Math.ceil(chartData.length / 6) === 0),

@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MemberHomeDashboardScreen from '../screens/Member/MemberHomeDashboardScreen';
 import WorkoutPlansScreen from '../screens/Member/WorkoutPlansScreen';
 import ProgressScreen from '../screens/Member/ProgressScreen';
-import MessagesScreen from '../screens/Member/MessagesScreen';
+import MessagesListScreen from '../screens/Member/MessagesListScreen';
 import ProfileScreen from '../screens/Member/ProfileScreen';
 
 import { setupNotifications } from '../services/notifications';
@@ -16,7 +16,7 @@ import { useChat } from '../context/ChatContext';
 const Tab = createBottomTabNavigator();
 
 const MainBottomTabs = () => {
-    const { unreadCount } = useChat();
+    const { unreadCount, hasUnread } = useChat();
     const insets = useSafeAreaInsets();
 
     React.useEffect(() => {
@@ -47,6 +47,7 @@ const MainBottomTabs = () => {
                 tabBarInactiveTintColor: '#A0AEC0',
                 tabBarShowLabel: true,
                 headerShown: false,
+                unmountOnBlur: Platform.OS === 'web',
                 tabBarStyle: {
                     minHeight: 60 + insets.bottom,
                     paddingBottom: Math.max(insets.bottom, 8),
@@ -71,10 +72,17 @@ const MainBottomTabs = () => {
             <Tab.Screen name="Progress" component={ProgressScreen} />
             <Tab.Screen
                 name="Messages"
-                component={MessagesScreen}
+                component={MessagesListScreen}
                 options={{
-                    tabBarBadge: unreadCount > 0 ? unreadCount : null,
-                    tabBarBadgeStyle: { backgroundColor: 'red', color: 'white' }
+                    tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+                    tabBarBadgeStyle: {
+                        backgroundColor: '#38A169',
+                        color: '#FFF',
+                        fontSize: 10,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                    },
                 }}
             />
             <Tab.Screen name="Profile" component={ProfileScreen} />

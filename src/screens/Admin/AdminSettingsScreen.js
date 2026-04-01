@@ -298,6 +298,9 @@ const AdminSettingsScreen = ({ navigation, route }) => {
                     <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBilling', { branchId, gymCode, branchName })}>
                         <Ionicons name="card-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminBroadcast', { branchId, gymCode, branchName })}>
+                        <Ionicons name="megaphone-outline" size={24} color="#A0AEC0" />
+                    </TouchableOpacity>
                     {/* <TouchableOpacity style={styles.mainSidebarItem} onPress={() => navigation.navigate('AdminAnalytics', { branchId, gymCode, branchName })}>
                         <Ionicons name="bar-chart-outline" size={24} color="#A0AEC0" />
                     </TouchableOpacity> */}
